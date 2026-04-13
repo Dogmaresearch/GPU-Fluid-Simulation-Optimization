@@ -1,3 +1,7 @@
+⚠️ License Notice
+
+This project is provided for research and demonstration purposes only.
+Commercial use is not allowed without explicit permission.
 # Real-Time GPU Fluid Simulation & Kernel Optimization Study
 
 ## 🔥 Overview
