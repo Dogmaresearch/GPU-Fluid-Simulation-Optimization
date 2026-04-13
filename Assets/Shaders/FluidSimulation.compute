@@ -1,0 +1,62 @@
+﻿#pragma kernel CSMain
+
+RWTexture2D<float4> DensityResult;
+Texture2D<float4> DensityPrevious;
+
+RWTexture2D<float4> VelocityResult;
+Texture2D<float4> VelocityPrevious;
+
+SamplerState samplerLinearClamp;
+
+float2 MousePos;
+float2 MouseDelta;
+float Radius;
+
+[numthreads(8,8,1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    int width = 512;
+    int height = 512;
+
+    int2 p = int2(id.xy);
+
+    if (p.x <= 1 || p.y <= 1 || p.x >= width - 2 || p.y >= height - 2)
+    {
+        DensityResult[p] = DensityPrevious[p] * 0.98;
+        VelocityResult[p] = VelocityPrevious[p] * 0.95;
+        return;
+    }
+
+    float2 uv = float2(p.x / 512.0, p.y / 512.0);
+
+    float4 velocity = VelocityPrevious[p] * 0.95;
+
+    // DISTANZA DAL MOUSE
+    float dist = distance(uv, MousePos);
+    float blob = exp(-dist * Radius);
+
+    // FORZA
+    float2 force = MouseDelta * 200.0 * blob;
+    velocity.rg += force;
+
+    // SWIRL (VORTICE)
+    float2 centerDir = uv - MousePos;
+    float2 swirl = float2(-centerDir.y, centerDir.x);
+    velocity.rg += swirl * 60.0 * blob;
+
+    // ADVECTION
+    float2 prevPos = float2(p) - velocity.rg;
+    prevPos.x = clamp(prevPos.x, 0.0, 511.0);
+    prevPos.y = clamp(prevPos.y, 0.0, 511.0);
+
+    float2 uvSample = prevPos / 512.0;
+    float4 density = DensityPrevious.SampleLevel(samplerLinearClamp, uvSample, 0) * 0.995;
+
+    float densityAdd = blob;
+
+    // 🔵 BLU PULITO (MICRO-FIX NO BIANCO)
+    density += float4(densityAdd * 0.01, densityAdd * 0.2, densityAdd * 1.6, 1.0);
+
+    DensityResult[p] = saturate(density);
+    VelocityResult[p] = velocity;
+}
