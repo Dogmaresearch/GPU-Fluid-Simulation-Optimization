@@ -144,11 +144,12 @@ nvcc CUDA-Benchmark/benchmark.cu -o benchmark
 ```bash
 ./benchmark
 ```
+These results were obtained on an NVIDIA GPU under controlled benchmarking conditions.
 
 ### Expected Output
 ```text
 Baseline Time: 12.4 ms
-Dogma Optimized Time: 7.1 ms
+Kernel Optimized Time: 7.1 ms
 Speedup: 1.74x
 Performance Improvement: 42.7%
 ```
