@@ -72,3 +72,14 @@ nvcc CUDA-Benchmark/kernel.cu -o kernel
 ```bash
 ./kernel
 ```
+## 🚀 Results
+
+The optimized kernel shows improved memory access patterns and better parallel execution efficiency compared to the baseline version.
+
+Preliminary observations:
+
+- Reduced memory access overhead
+- More efficient thread utilization
+- Smoother execution behavior under load
+
+This is an ongoing study, but the current implementation demonstrates how low-level memory optimizations can impact GPU performance.
