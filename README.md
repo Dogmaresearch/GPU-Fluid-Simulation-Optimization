@@ -61,6 +61,20 @@ The optimization techniques explored in this project are directly applicable to:
 
 Understanding memory behavior at the GPU level is essential for minimizing bottlenecks in distributed and high-performance environments.
 
+## 🌐 Relevance to Networking Systems
+
+Although this project is centered on GPU compute optimization, the same performance principles are highly relevant in high-throughput networking environments.
+
+In particular:
+
+- Efficient memory access is critical for packet processing and data movement
+- Latency-sensitive systems benefit from reduced execution overhead
+- Bandwidth-aware optimization is directly applicable to data-intensive infrastructure
+
+These concepts are relevant to modern networking and distributed systems, where throughput, latency, and resource efficiency are key engineering concerns.
+
+See also: [docs/networking-notes.md](docs/networking-notes.md)
+
 ---
 
 💧 Fluid Simulation (Unity)
