@@ -31,7 +31,9 @@ jobs:
           test -f network_tests/check_socket_output.py
           test -f network_tests/run_real_network_test.sh
           test -f network_tests/analyze_network.py
-
+          test -f network_tests/run_iperf_local.sh
+          test -f network_tests/check_iperf_output.py
+          
       - name: Validate mock benchmark output
         run: python3 scripts/check_benchmark_output.py test/mock_benchmark_output.txt
 
