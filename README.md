@@ -111,6 +111,8 @@ This project includes basic networking validation workflows and performance chec
 	•	Throughput testing (iperf3)
 	•	Automated CI validation (GitHub Actions)
 
+	This project includes automated validation of networking behavior using Linux tools such as iperf3 and socket inspection, simulating performance testing scenarios relevant to datacenter environments.
+
 📄 See: docs/networking-notes.md
 
 ⸻
