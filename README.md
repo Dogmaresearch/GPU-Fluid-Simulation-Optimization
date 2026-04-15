@@ -175,6 +175,7 @@ Run:
 ```bash
 python3 scripts/run_benchmark.py
 
+
 # 1. Compile CUDA benchmark
 nvcc CUDA-Benchmark/benchmark.cu -o benchmark
 
