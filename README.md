@@ -1,3 +1,14 @@
+⚠️ License Notice
+
+This repository is intended for research, educational, and demonstration purposes only.
+
+All rights reserved by the author.
+
+- Commercial use is strictly prohibited without prior written permission.
+- Modification and redistribution are allowed for non-commercial use with proper attribution.
+
+For commercial licensing inquiries, please contact the author.
+
 🚀 GPU Compute Optimization & Memory Access Analysis for High-Performance Systems
 
 > ⚡ Focus: GPU Memory Optimization, Parallel Execution, High-Performance Systems
