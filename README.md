@@ -161,3 +161,12 @@ Speedup: 1.74x
 Performance Improvement: 42.7%
 Approx. Memory Bandwidth: 9.45 GB/s
 ```
+
+## ⚙️ Benchmark Automation
+
+A Python script is provided to automate performance testing and collect results across multiple runs.
+
+Run:
+
+```bash
+python3 scripts/run_benchmark.py
