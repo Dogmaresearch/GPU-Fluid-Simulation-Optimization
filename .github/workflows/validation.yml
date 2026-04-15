@@ -1,0 +1,28 @@
+name: Repository Validation
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Python syntax
+        run: python3 -m py_compile scripts/run_benchmark.py
+
+      - name: Check Bash script syntax
+        run: bash -n scripts/run_benchmark.sh
+
+- name: Verify project structure
+  run: |
+    test -f CUDA-Benchmark/benchmark.cu
+    test -f scripts/run_benchmark.py
+    test -f scripts/run_benchmark.sh
+    test -f docs/networking-notes.md
+    test -f README.md
+#trigger
