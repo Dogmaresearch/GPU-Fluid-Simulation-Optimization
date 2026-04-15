@@ -18,11 +18,10 @@ jobs:
       - name: Check Bash script syntax
         run: bash -n scripts/run_benchmark.sh
 
-- name: Verify project structure
-  run: |
-    test -f CUDA-Benchmark/benchmark.cu
-    test -f scripts/run_benchmark.py
-    test -f scripts/run_benchmark.sh
-    test -f docs/networking-notes.md
-    test -f README.md
-#trigger
+      - name: Verify project structure
+        run: |
+          test -f CUDA-Benchmark/benchmark.cu
+          test -f scripts/run_benchmark.py
+          test -f scripts/run_benchmark.sh
+          test -f docs/networking-notes.md
+          test -f README.md
