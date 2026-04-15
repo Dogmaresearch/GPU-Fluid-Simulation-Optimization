@@ -1,131 +1,64 @@
-#include <iostream>
-#include <cuda_runtime.h>
+// ===================================
+// BASELINE TEST
+// ===================================
+float baseline_ms = 0.0f;
+float optimized_ms = 0.0f;
 
-// Numero elementi
-#define N (1 << 24)
+cudaEventRecord(start);
 
-// ============================================================
-// BASELINE KERNEL
-// ============================================================
-_global_ void baseline_kernel(float* C,
-                                const float* A,
-                                const float* B,
-                                int N)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+baseline_kernel<<<gridSize, blockSize>>>(d_C, d_A, d_B, N);
 
-    if (idx < N)
-    {
-        C[idx] = A[idx] * B[idx] + 0.5f;
-    }
-}
+cudaEventRecord(stop);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&baseline_ms, start, stop);
 
-// ============================================================
-// DOGMA OPTIMIZED KERNEL
-// ============================================================
-/*
- * Kernel: Dogma Optimized Vectorized Compute Kernel
- * Author: Dogma
- *
- * Uses float4 to reduce memory access and improve performance
- */
-_global_ void dogma_optimized_kernel(float4* _restrict_ C,
-                                       const float4* _restrict_ A,
-                                       const float4* _restrict_ B,
-                                       int N)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+std::cout << "Baseline Time: " << baseline_ms << " ms\n";
 
-    if (idx < N)
-    {
-        float4 a = A[idx];
-        float4 b = B[idx];
 
-        float4 r;
+// ===================================
+// OPTIMIZED TEST
+// ===================================
+int optimizedGridSize = ((N / 4) + blockSize - 1) / blockSize;
 
-        r.x = a.x * b.x + 0.5f;
-        r.y = a.y * b.y + 0.5f;
-        r.z = a.z * b.z + 0.5f;
-        r.w = a.w * b.w + 0.5f;
+cudaEventRecord(start);
 
-        C[idx] = r;
-    }
-}
+dogma_optimized_kernel<<<optimizedGridSize, blockSize>>>(
+    (float4*)d_C,
+    (float4*)d_A,
+    (float4*)d_B,
+    N / 4
+);
 
-// ============================================================
-// MAIN
-// ============================================================
-int main()
-{
-    size_t size = N * sizeof(float);
+cudaEventRecord(stop);
+cudaEventSynchronize(stop);
+cudaEventElapsedTime(&optimized_ms, start, stop);
 
-    // Host memory
-    float* h_A = (float*)malloc(size);
-    float* h_B = (float*)malloc(size);
+std::cout << "Dogma Optimized Time: " << optimized_ms << " ms\n";
 
-    for (int i = 0; i < N; i++)
-    {
-        h_A[i] = 1.0f;
-        h_B[i] = 2.0f;
-    }
 
-    // Device memory
-    float *d_A, *d_B, *d_C;
+// ===================================
+// RESULTS
+// ===================================
+cudaDeviceSynchronize();
 
-    cudaMalloc(&d_A, size);
-    cudaMalloc(&d_B, size);
-    cudaMalloc(&d_C, size);
+float speedup = baseline_ms / optimized_ms;
+float improvement = ((baseline_ms - optimized_ms) / baseline_ms) * 100.0f;
 
-    cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
+std::cout << "Speedup: " << speedup << "x\n";
+std::cout << "Performance Improvement: " << improvement << "%\n";
 
-    int blockSize = 256;
-    int gridSize = (N + blockSize - 1) / blockSize;
 
-    cudaEvent_t start, stop;
-    float ms;
+// ===================================
+// CLEANUP
+// ===================================
+cudaEventDestroy(start);
+cudaEventDestroy(stop);
 
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+cudaFree(d_A);
+cudaFree(d_B);
+cudaFree(d_C);
 
-    // =======================
-    // BASELINE TEST
-    // =======================
-    cudaEventRecord(start);
+free(h_A);
+free(h_B);
 
-    baseline_kernel<<<gridSize, blockSize>>>(d_C, d_A, d_B, N);
-
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&ms, start, stop);
-
-    std::cout << "Baseline Time: " << ms << " ms\n";
-
-    // =======================
-    // OPTIMIZED TEST
-    // =======================
-    cudaEventRecord(start);
-
-    dogma_optimized_kernel<<<gridSize / 4, blockSize>>>(
-        (float4*)d_C,
-        (float4*)d_A,
-        (float4*)d_B,
-        N / 4
-    );
-
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    cudaEventElapsedTime(&ms, start, stop);
-
-    std::cout << "Dogma Optimized Time: " << ms << " ms\n";
-
-    // Cleanup
-    cudaFree(d_A);
-    cudaFree(d_B);
-    cudaFree(d_C);
-
-    free(h_A);
-    free(h_B);
-
-    return 0;
-}
+return 0;
