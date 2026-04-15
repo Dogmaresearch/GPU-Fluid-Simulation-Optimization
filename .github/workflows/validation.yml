@@ -37,3 +37,9 @@ jobs:
 
       - name: Analyze real network output
         run: python3 network_tests/analyze_network.py
+
+      - name: Run socket inspection
+        run: bash network_tests/run_socket_inspection.sh
+
+      - name: Validate socket inspection output
+        run: python3 network_tests/check_socket_output.py
