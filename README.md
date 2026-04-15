@@ -150,8 +150,14 @@ These results were obtained on an NVIDIA GPU under controlled benchmarking condi
 
 ### Expected Output
 ```text
-Baseline Time: 12.4 ms
-Kernel Optimized Time: 7.1 ms
-Speedup: 1.74x
-Performance Improvement: 42.7%
+Validation: PASSED
+Iterations: 100
+Elements processed: 16777216
+Bytes processed: 67108864
+
+Baseline Time: X ms
+Optimized Kernel Time: Y ms
+Speedup: Z.x
+Performance Improvement: XX%
+Approx. Memory Bandwidth: XX GB/s
 ```
