@@ -10,7 +10,7 @@ def run_once():
     return result.stdout
 
 def extract_time(output):
-    match = re.search(r"Optimized Kernel Time:\s+([\d.]+)", output)
+    match = re.search(r"Optimized Kernel Time:\s+([\d.]+)\s+ms", output)
     if match:
         return float(match.group(1))
     return None
