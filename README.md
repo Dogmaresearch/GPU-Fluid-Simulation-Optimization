@@ -152,8 +152,8 @@ These results were obtained on an NVIDIA GPU under controlled benchmarking condi
 ```text
 Validation: PASSED
 Iterations: 100
-Elements processed: 16777216
-Bytes processed: 67108864
+Elements processed: 16,777,216
+Bytes processed: 67,108,864
 
 Baseline Time: 12.4 ms
 Optimized Kernel Time: 7.1 ms
