@@ -57,7 +57,7 @@ The optimization focuses on improving memory access patterns and parallel execut
 
 ---
 
-## 🚀 How to Run (CUDA Kernel)
+## 🚀 How to Run (CUDA Benchmark)
 
 ### Requirements
 - NVIDIA GPU
@@ -65,21 +65,18 @@ The optimization focuses on improving memory access patterns and parallel execut
 
 ### Compile
 ```bash
-nvcc CUDA-Benchmark/kernel.cu -o kernel
+nvcc CUDA-Benchmark/benchmark.cu -o benchmark
 ```
 
 ### Run
 ```bash
-./kernel
+./benchmark
 ```
-## 🚀 Results
 
-The optimized kernel shows improved memory access patterns and better parallel execution efficiency compared to the baseline version.
-
-Preliminary observations:
-
-- Reduced memory access overhead
-- More efficient thread utilization
-- Smoother execution behavior under load
-
-This is an ongoing study, but the current implementation demonstrates how low-level memory optimizations can impact GPU performance.
+### Expected Output
+```text
+Baseline Time: X ms
+Dogma Optimized Time: Y ms
+Speedup: Z.x
+Performance Improvement: XX%
+```
