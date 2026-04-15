@@ -1,11 +1,8 @@
-# ⚠️ License Notice
+# 🚀 GPU Compute Optimization & Memory Access Analysis for High-Performance Systems
 
-This project is provided for research and demonstration purposes only.  
-Commercial use is not allowed without explicit permission.
+This project investigates how low-level memory access patterns affect GPU performance, with a focus on building intuition for optimizing real-world high-performance systems.
 
 ---
-
-# Real-Time GPU Fluid Simulation & CUDA Kernel Optimization
 
 ## 🔥 Overview
 
@@ -13,21 +10,49 @@ This project explores GPU-based computation through:
 
 - Real-time fluid simulation in Unity (compute shaders)
 - Analysis of data flow inside the GPU
-- CUDA kernel optimization focused on memory access and parallelism
+- CUDA kernel optimization focused on memory access and parallel execution
 
-The goal wasn’t just to make it work, but to understand:
+The goal was not just to make it work, but to understand:
 
 👉 how data moves across the GPU  
-👉 where performance is lost  
-👉 how to optimize the computation flow  
+👉 where performance bottlenecks occur  
+👉 how to optimize computation flow at a low level  
 
 ---
 
-## 🧪 Fluid Simulation
+## 🧠 System-Level Performance Perspective
+
+This project goes beyond basic CUDA implementation by analyzing performance from a system-level perspective.
+
+Key considerations:
+
+- Global memory access efficiency  
+- Memory coalescing behavior  
+- Data movement between host and device  
+- Kernel launch configuration and scalability  
+
+These aspects are critical in high-performance systems used in AI, HPC, and large-scale data processing.
+
+---
+
+## 🌍 Real-World Relevance
+
+The optimization techniques explored in this project are directly applicable to:
+
+- GPU-accelerated AI workloads  
+- High-performance computing (HPC)  
+- Large-scale data processing pipelines  
+- Networking systems requiring high throughput and low latency  
+
+Understanding memory behavior at the GPU level is essential for minimizing bottlenecks in distributed and high-performance environments.
+
+---
+
+## 💧 Fluid Simulation (Unity)
 
 A GPU-based fluid simulation implemented in Unity using compute shaders.
 
-This provides the visual and practical context for understanding GPU computation patterns.
+This provides a visual and practical context for understanding GPU computation patterns and performance behavior.
 
 ---
 
@@ -36,13 +61,17 @@ This provides the visual and practical context for understanding GPU computation
 Comparison between:
 
 - Baseline kernel  
-- Optimized kernel (vectorized float4)
+- Optimized kernel (vectorized using `float4`)  
 
-The optimization focuses on improving memory access patterns and parallel execution efficiency.
+The optimization focuses on:
+
+- Improving memory access patterns  
+- Reducing global memory transactions  
+- Increasing parallel efficiency  
 
 ---
 
-## 🧠 Key Concepts
+## 🧩 Key Concepts
 
 - GPU parallelism  
 - Memory coalescing  
@@ -60,10 +89,14 @@ The optimization focuses on improving memory access patterns and parallel execut
 ## 🚀 How to Run (CUDA Benchmark)
 
 ### Requirements
-- NVIDIA GPU
+
+- NVIDIA GPU  
 - CUDA Toolkit installed (recommended 11.x or newer)
 
+---
+
 ### Compile
+
 ```bash
 nvcc CUDA-Benchmark/benchmark.cu -o benchmark
 ```
