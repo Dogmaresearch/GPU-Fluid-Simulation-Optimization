@@ -26,5 +26,5 @@ jobs:
           test -f docs/networking-notes.md
           test -f README.md
 
-- name: Validate mock benchmark output
-  run: python3 scripts/check_benchmark_output.py test/mock_benchmark_output.txt
+     - name: Validate mock benchmark output
+       run: python3 scripts/check_benchmark_output.py test/mock_benchmark_output.txt
