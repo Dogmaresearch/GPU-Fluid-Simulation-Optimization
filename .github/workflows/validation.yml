@@ -28,3 +28,6 @@ jobs:
 
       - name: Validate mock benchmark output
         run: python3 scripts/check_benchmark_output.py test/mock_benchmark_output.txt
+
+      - name: Validate mock network output
+        run: python3 network_tests/check_network_output.py network_tests/mock_network_output.txt
