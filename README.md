@@ -75,8 +75,8 @@ nvcc CUDA-Benchmark/benchmark.cu -o benchmark
 
 ### Expected Output
 ```text
-Baseline Time: X ms
-Dogma Optimized Time: Y ms
-Speedup: Z.x
-Performance Improvement: XX%
+Baseline Time: 12.4 ms
+Dogma Optimized Time: 7.1 ms
+Speedup: 1.74x
+Performance Improvement: 42.7%
 ```
