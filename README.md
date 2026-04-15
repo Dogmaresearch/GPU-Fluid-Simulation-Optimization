@@ -174,3 +174,12 @@ Run:
 
 ```bash
 python3 scripts/run_benchmark.py
+
+# 1. Compile CUDA benchmark
+nvcc CUDA-Benchmark/benchmark.cu -o benchmark
+
+# 2. Run benchmark manually (optional)
+./benchmark
+
+# 3. Run automated benchmark (recommended)
+python3 scripts/run_benchmark.py
