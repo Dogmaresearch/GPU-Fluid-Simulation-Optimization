@@ -9,11 +9,13 @@ All rights reserved by the author.
 
 For commercial licensing inquiries, please contact the author.
 
+
 🚀 GPU Compute Optimization & Memory Access Analysis for High-Performance Systems
 
 > ⚡ Focus: GPU Memory Optimization, Parallel Execution, High-Performance Systems
 
 This project investigates how low-level memory access patterns affect GPU performance, with a focus on building intuition for optimizing real-world high-performance systems.
+Built with a focus on understanding real GPU bottlenecks in high-performance environments.
 
 ---
 
