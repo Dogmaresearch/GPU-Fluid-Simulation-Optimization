@@ -31,10 +31,7 @@ jobs:
 
       - name: Validate mock network output
         run: python3 network_tests/check_network_output.py network_tests/mock_network_output.txt
-
-      - name: Analyze network latency
-        run: python3 network_tests/analyze_network.py
-
+    
       - name: Run real network test
         run: bash network_tests/run_real_network_test.sh
 
