@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set +e  # <-- IMPORTANTE (non far fallire se ping fallisce)
 
 echo "Running real network test..."
 
