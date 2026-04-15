@@ -164,7 +164,7 @@ Approx. Memory Bandwidth: 9.45 GB/s
 
 ## ⚙️ Benchmark Automation
 
-A Python script is provided to automate performance testing and collect results across multiple runs.
+A Python automation script is provided to run the benchmark multiple times and summarize performance results.
 
 Run:
 
