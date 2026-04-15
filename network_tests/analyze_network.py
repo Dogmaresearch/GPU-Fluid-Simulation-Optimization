@@ -6,7 +6,7 @@ def extract_ping_times(content):
     return [float(t) for t in times]
 
 def main():
-    file = Path("network_tests/mock_network_output.txt")
+    file = Path("network_tests/real_network_output.txt")
 
     if not file.exists():
         print("No network output found")
