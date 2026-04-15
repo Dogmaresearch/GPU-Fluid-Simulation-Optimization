@@ -50,3 +50,9 @@ jobs:
 
       - name: Validate socket inspection output
         run: python3 network_tests/check_socket_output.py
+
+      - name: Run iperf test
+        run: bash network_tests/run_iperf_local.sh
+
+      - name: Validate iperf output
+        run: python3 network_tests/check_iperf_output.py
