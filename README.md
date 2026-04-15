@@ -7,7 +7,7 @@ All rights reserved by the author.
 - Commercial use is strictly prohibited without prior written permission.
 - Modification and redistribution are allowed for non-commercial use with proper attribution.
 
-For commercial licensing inquiries, please contact the author.
+For commercial licensing inquiries, please contact the author. Dogmaresearch@proton.me
 
 
 🚀 GPU Compute Optimization & Memory Access Analysis for High-Performance Systems
