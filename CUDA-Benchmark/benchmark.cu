@@ -25,7 +25,6 @@ do {                                                                            
 
 // ============================================================
 // BASELINE KERNEL
-// One thread processes one scalar float.
 // ============================================================
 __global__ void baseline_kernel(
     value_t* c,
@@ -49,7 +48,6 @@ __global__ void baseline_kernel(
 
 // ============================================================
 // VECTORIZED KERNEL
-// One thread processes one float4.
 // ============================================================
 __global__ void vectorized_kernel(
     float4* __restrict__ c,
@@ -83,7 +81,6 @@ __global__ void vectorized_kernel(
 
 // ============================================================
 // SHARED MEMORY KERNEL
-// Included for comparison. On this workload it may not help.
 // ============================================================
 __global__ void shared_memory_kernel(
     value_t* c,
@@ -118,7 +115,6 @@ __global__ void shared_memory_kernel(
 
 // ============================================================
 // DOGMA ULTRA KERNEL
-// Vectorized + Grid-Stride + Unrolling
 // ============================================================
 __global__ void dogma_ultra_kernel(
     float4* __restrict__ c,
@@ -153,7 +149,6 @@ __global__ void dogma_ultra_kernel(
 
 // ============================================================
 // DOGMA FINAL KERNEL
-// 2x float4 per thread + Grid-Stride + Register Tiling
 // ============================================================
 __global__ void dogma_final_kernel(
     float4* __restrict__ c,
@@ -200,8 +195,6 @@ __global__ void dogma_final_kernel(
 
 // ============================================================
 // DOGMA GHOST KERNEL
-// Lean vectorized kernel focused on low register pressure,
-// grid-stride execution, and simple memory access.
 // ============================================================
 __global__ void dogma_ghost_kernel(
     float4* __restrict__ c,
@@ -231,6 +224,42 @@ __global__ void dogma_ghost_kernel(
         }
 
         c[idx] = rv;
+    }
+}
+
+// ============================================================
+// DOGMA APEX KERNEL
+// Lean vectorized kernel with low register pressure,
+// grid-stride loop, and 128-thread friendly launch.
+// ============================================================
+__global__ void dogma_apex_kernel(
+    float4* __restrict__ c,
+    const float4* __restrict__ a,
+    const float4* __restrict__ b,
+    int n4)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    for (int i = idx; i < n4; i += stride) {
+        float4 av = a[i];
+        float4 bv = b[i];
+        float4 res;
+
+        res.x = 0.0f;
+        res.y = 0.0f;
+        res.z = 0.0f;
+        res.w = 0.0f;
+
+        #pragma unroll 16
+        for (int k = 0; k < INNER_REPEAT; ++k) {
+            res.x += av.x * bv.x;
+            res.y += av.y * bv.y;
+            res.z += av.z * bv.z;
+            res.w += av.w * bv.w;
+        }
+
+        c[i] = res;
     }
 }
 
@@ -418,6 +447,34 @@ float run_dogma_ghost(
     return ms / static_cast<float>(ITERATIONS);
 }
 
+float run_dogma_apex(
+    value_t* d_c,
+    const value_t* d_a,
+    const value_t* d_b,
+    int n4,
+    dim3 grid,
+    dim3 block,
+    cudaEvent_t start,
+    cudaEvent_t stop)
+{
+    float ms = 0.0f;
+
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < ITERATIONS; ++i) {
+        dogma_apex_kernel<<<grid, block>>>(
+            reinterpret_cast<float4*>(d_c),
+            reinterpret_cast<const float4*>(d_a),
+            reinterpret_cast<const float4*>(d_b),
+            n4);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
+
+    return ms / static_cast<float>(ITERATIONS);
+}
+
 int main()
 {
     static_assert(N % 4 == 0, "N must be divisible by 4 for float4 vectorization.");
@@ -438,9 +495,10 @@ int main()
     value_t* h_c_dogma_ultra = static_cast<value_t*>(std::malloc(bytes));
     value_t* h_c_dogma_final = static_cast<value_t*>(std::malloc(bytes));
     value_t* h_c_dogma_ghost = static_cast<value_t*>(std::malloc(bytes));
+    value_t* h_c_dogma_apex = static_cast<value_t*>(std::malloc(bytes));
 
     if (!h_a || !h_b || !h_c_baseline || !h_c_vectorized || !h_c_shared ||
-        !h_c_dogma_ultra || !h_c_dogma_final || !h_c_dogma_ghost) {
+        !h_c_dogma_ultra || !h_c_dogma_final || !h_c_dogma_ghost || !h_c_dogma_apex) {
         std::cerr << "Host memory allocation failed." << std::endl;
         return EXIT_FAILURE;
     }
@@ -455,7 +513,7 @@ int main()
     // ============================================================
     value_t *d_a, *d_b;
     value_t *d_c_baseline, *d_c_vectorized, *d_c_shared;
-    value_t *d_c_dogma_ultra, *d_c_dogma_final, *d_c_dogma_ghost;
+    value_t *d_c_dogma_ultra, *d_c_dogma_final, *d_c_dogma_ghost, *d_c_dogma_apex;
 
     CUDA_CHECK(cudaMalloc(&d_a, bytes));
     CUDA_CHECK(cudaMalloc(&d_b, bytes));
@@ -465,6 +523,7 @@ int main()
     CUDA_CHECK(cudaMalloc(&d_c_dogma_ultra, bytes));
     CUDA_CHECK(cudaMalloc(&d_c_dogma_final, bytes));
     CUDA_CHECK(cudaMalloc(&d_c_dogma_ghost, bytes));
+    CUDA_CHECK(cudaMalloc(&d_c_dogma_apex, bytes));
 
     CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
@@ -484,6 +543,9 @@ int main()
 
     dim3 ghost_grid(num_sms * 16);
     dim3 ghost_block(128);
+
+    dim3 apex_grid(num_sms * 32);
+    dim3 apex_block(128);
 
     // ============================================================
     // EVENTS
@@ -535,6 +597,14 @@ int main()
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    dogma_apex_kernel<<<apex_grid, apex_block>>>(
+        reinterpret_cast<float4*>(d_c_dogma_apex),
+        reinterpret_cast<const float4*>(d_a),
+        reinterpret_cast<const float4*>(d_b),
+        n4);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
     // ============================================================
     // TIMING
     // ============================================================
@@ -562,6 +632,10 @@ int main()
         d_c_dogma_ghost, d_a, d_b, n4,
         ghost_grid, ghost_block, start, stop);
 
+    const float dogma_apex_ms = run_dogma_apex(
+        d_c_dogma_apex, d_a, d_b, n4,
+        apex_grid, apex_block, start, stop);
+
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // ============================================================
@@ -573,6 +647,7 @@ int main()
     CUDA_CHECK(cudaMemcpy(h_c_dogma_ultra, d_c_dogma_ultra, bytes, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(h_c_dogma_final, d_c_dogma_final, bytes, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(h_c_dogma_ghost, d_c_dogma_ghost, bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_c_dogma_apex, d_c_dogma_apex, bytes, cudaMemcpyDeviceToHost));
 
     // ============================================================
     // VALIDATION
@@ -592,9 +667,13 @@ int main()
     const bool valid_dogma_ghost =
         validate_arrays(h_c_baseline, h_c_dogma_ghost, n, "Dogma Ghost");
 
+    const bool valid_dogma_apex =
+        validate_arrays(h_c_baseline, h_c_dogma_apex, n, "Dogma Apex");
+
     const bool all_valid =
         valid_vectorized && valid_shared &&
-        valid_dogma_ultra && valid_dogma_final && valid_dogma_ghost;
+        valid_dogma_ultra && valid_dogma_final &&
+        valid_dogma_ghost && valid_dogma_apex;
 
     // ============================================================
     // METRICS
@@ -614,6 +693,9 @@ int main()
     const float speedup_dogma_ghost =
         (dogma_ghost_ms > 0.0f) ? (baseline_ms / dogma_ghost_ms) : 0.0f;
 
+    const float speedup_dogma_apex =
+        (dogma_apex_ms > 0.0f) ? (baseline_ms / dogma_apex_ms) : 0.0f;
+
     const float improvement_vectorized =
         (baseline_ms > 0.0f) ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f : 0.0f;
 
@@ -629,6 +711,9 @@ int main()
     const float improvement_dogma_ghost =
         (baseline_ms > 0.0f) ? ((baseline_ms - dogma_ghost_ms) / baseline_ms) * 100.0f : 0.0f;
 
+    const float improvement_dogma_apex =
+        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_apex_ms) / baseline_ms) * 100.0f : 0.0f;
+
     const float bandwidth_vectorized =
         (vectorized_ms > 0.0f) ? (bytes / (vectorized_ms / 1000.0f)) / 1e9f : 0.0f;
 
@@ -643,6 +728,9 @@ int main()
 
     const float bandwidth_dogma_ghost =
         (dogma_ghost_ms > 0.0f) ? (bytes / (dogma_ghost_ms / 1000.0f)) / 1e9f : 0.0f;
+
+    const float bandwidth_dogma_apex =
+        (dogma_apex_ms > 0.0f) ? (bytes / (dogma_apex_ms / 1000.0f)) / 1e9f : 0.0f;
 
     // ============================================================
     // OUTPUT
@@ -662,43 +750,47 @@ int main()
     std::cout << "Shared Memory Kernel Time: " << shared_ms << " ms\n";
     std::cout << "Dogma Ultra Kernel Time: " << dogma_ultra_ms << " ms\n";
     std::cout << "Dogma Final Kernel Time: " << dogma_final_ms << " ms\n";
-    std::cout << "Dogma Ghost Kernel Time: " << dogma_ghost_ms << " ms\n\n";
+    std::cout << "Dogma Ghost Kernel Time: " << dogma_ghost_ms << " ms\n";
+    std::cout << "Dogma Apex Kernel Time: " << dogma_apex_ms << " ms\n\n";
 
     std::cout << "Vectorized Speedup: " << speedup_vectorized << "x\n";
     std::cout << "Shared Memory Speedup: " << speedup_shared << "x\n";
     std::cout << "Dogma Ultra Speedup: " << speedup_dogma_ultra << "x\n";
     std::cout << "Dogma Final Speedup: " << speedup_dogma_final << "x\n";
-    std::cout << "Dogma Ghost Speedup: " << speedup_dogma_ghost << "x\n\n";
+    std::cout << "Dogma Ghost Speedup: " << speedup_dogma_ghost << "x\n";
+    std::cout << "Dogma Apex Speedup: " << speedup_dogma_apex << "x\n\n";
 
     std::cout << "Vectorized Improvement: " << improvement_vectorized << "%\n";
     std::cout << "Shared Memory Improvement: " << improvement_shared << "%\n";
     std::cout << "Dogma Ultra Improvement: " << improvement_dogma_ultra << "%\n";
     std::cout << "Dogma Final Improvement: " << improvement_dogma_final << "%\n";
-    std::cout << "Dogma Ghost Improvement: " << improvement_dogma_ghost << "%\n\n";
+    std::cout << "Dogma Ghost Improvement: " << improvement_dogma_ghost << "%\n";
+    std::cout << "Dogma Apex Improvement: " << improvement_dogma_apex << "%\n\n";
 
     std::cout << "Approx. Vectorized Bandwidth: " << bandwidth_vectorized << " GB/s\n";
     std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n";
     std::cout << "Approx. Dogma Ultra Bandwidth: " << bandwidth_dogma_ultra << " GB/s\n";
     std::cout << "Approx. Dogma Final Bandwidth: " << bandwidth_dogma_final << " GB/s\n";
     std::cout << "Approx. Dogma Ghost Bandwidth: " << bandwidth_dogma_ghost << " GB/s\n";
+    std::cout << "Approx. Dogma Apex Bandwidth: " << bandwidth_dogma_apex << " GB/s\n";
 
     // ============================================================
-    // BLOCK SIZE TUNING FOR DOGMA GHOST
+    // BLOCK SIZE TUNING FOR DOGMA APEX
     // ============================================================
-    std::cout << "\n=== Dogma Ghost Block Size Tuning ===\n";
+    std::cout << "\n=== Dogma Apex Block Size Tuning ===\n";
 
-    const std::vector<int> ghost_block_sizes = {64, 128, 256, 512};
+    const std::vector<int> apex_block_sizes = {64, 128, 256, 512};
 
-    for (int bs : ghost_block_sizes) {
+    for (int bs : apex_block_sizes) {
         dim3 tuning_block(bs);
-        dim3 tuning_grid(num_sms * 16);
+        dim3 tuning_grid(num_sms * 32);
 
         float time_ms = 0.0f;
 
         CUDA_CHECK(cudaEventRecord(start));
         for (int i = 0; i < ITERATIONS; ++i) {
-            dogma_ghost_kernel<<<tuning_grid, tuning_block>>>(
-                reinterpret_cast<float4*>(d_c_dogma_ghost),
+            dogma_apex_kernel<<<tuning_grid, tuning_block>>>(
+                reinterpret_cast<float4*>(d_c_dogma_apex),
                 reinterpret_cast<const float4*>(d_a),
                 reinterpret_cast<const float4*>(d_b),
                 n4);
@@ -727,6 +819,7 @@ int main()
     CUDA_CHECK(cudaFree(d_c_dogma_ultra));
     CUDA_CHECK(cudaFree(d_c_dogma_final));
     CUDA_CHECK(cudaFree(d_c_dogma_ghost));
+    CUDA_CHECK(cudaFree(d_c_dogma_apex));
 
     std::free(h_a);
     std::free(h_b);
@@ -736,6 +829,7 @@ int main()
     std::free(h_c_dogma_ultra);
     std::free(h_c_dogma_final);
     std::free(h_c_dogma_ghost);
+    std::free(h_c_dogma_apex);
 
     return all_valid ? EXIT_SUCCESS : EXIT_FAILURE;
 }
