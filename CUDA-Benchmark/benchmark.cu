@@ -27,7 +27,13 @@ __global__ void baseline_kernel(carro* C, const carro* A, const carro* B, int n)
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < n) {
-        C[idx] = A[idx] * B[idx] + 0.5f;
+        float val = 0.0f;
+
+for (int k = 0; k < 100; k++) {
+    val += A[idx] * B[idx];
+}
+
+C[idx] = val;
     }
 }
 
