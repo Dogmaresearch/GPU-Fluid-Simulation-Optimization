@@ -5,8 +5,8 @@
 
 using carro = float;
 
-#define N (1 << 24)
-#define ITERAZIONI 100
+#define N (1 << 26)
+#define ITERAZIONI 500
 #define BLOCK_SIZE 256
 
 #define CUDA_CHECK(chiamata)                                                      \
