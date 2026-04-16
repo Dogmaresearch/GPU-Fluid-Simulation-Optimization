@@ -3,24 +3,26 @@
 #include <cmath>
 #include <cstdlib>
 
+using carro = float;
+
 #define N (1 << 24)
-#define ITERATIONS 100
+#define ITERAZIONI 100
+#define BLOCK_SIZE 256
 
-#define CUDA_CHECK(call)                                                     \
-    do {                                                                     \
-        cudaError_t err = call;                                              \
-        if (err != cudaSuccess) {                                            \
-            std::cerr << "CUDA Error: " << cudaGetErrorString(err)           \
-                      << " at line " << __LINE__ << std::endl;               \
-            std::exit(EXIT_FAILURE);                                         \
-        }                                                                    \
-    } while (0)
-
+#define CUDA_CHECK(chiamata)                                                      \
+do {                                                                              \
+    cudaError_t err = (chiamata);                                                 \
+    if (err != cudaSuccess) {                                                     \
+        std::cerr << "CUDA error: " << cudaGetErrorString(err)                    \
+                  << " at line " << __LINE__ << std::endl;                        \
+        std::exit(EXIT_FAILURE);                                                  \
+    }                                                                             \
+} while (0)
 
 // ============================================================
-// BASELINE KERNEL
+// KERNEL DI BASE
 // ============================================================
-__global__ void baseline_kernel(float* C, const float* A, const float* B, int n)
+__global__ void baseline_kernel(carro* C, const carro* A, const carro* B, int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -29,21 +31,18 @@ __global__ void baseline_kernel(float* C, const float* A, const float* B, int n)
     }
 }
 
-
 // ============================================================
-// DOGMA OPTIMIZED KERNEL
-// Uses float4 vectorized memory access to improve coalescing
-// and reduce global memory instructions.
+// KERNEL OTTIMIZZATO VETTORIALIZZATO (float4)
 // ============================================================
-__global__ void dogma_optimized_kernel(
+__global__ void vectorized_kernel(
     float4* __restrict__ C,
     const float4* __restrict__ A,
     const float4* __restrict__ B,
-    int n)
+    int n4)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (idx < n) {
+    if (idx < n4) {
         float4 a = A[idx];
         float4 b = B[idx];
         float4 r;
@@ -57,166 +56,244 @@ __global__ void dogma_optimized_kernel(
     }
 }
 
+// ============================================================
+// KERNEL CON SHARED MEMORY
+// ============================================================
+__global__ void shared_memory_kernel(
+    carro* C,
+    const carro* A,
+    const carro* B,
+    int n)
+{
+    __shared__ carro sA[BLOCK_SIZE];
+    __shared__ carro sB[BLOCK_SIZE];
+
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    if (idx < n) {
+        sA[tid] = A[idx];
+        sB[tid] = B[idx];
+    }
+
+    __syncthreads();
+
+    if (idx < n) {
+        C[idx] = sA[tid] * sB[tid] + 0.5f;
+    }
+}
 
 int main()
 {
-    const size_t size = N * sizeof(float);
+    const size_t dimensioni = N * sizeof(carro);
+    const int n4 = N / 4;
 
-    // ----------------------------
-    // Host memory
-    // ----------------------------
-    float* h_A = static_cast<float*>(std::malloc(size));
-    float* h_B = static_cast<float*>(std::malloc(size));
-    float* h_C_baseline = static_cast<float*>(std::malloc(size));
-    float* h_C_optimized = static_cast<float*>(std::malloc(size));
+    // ============================================================
+    // MEMORIA HOST
+    // ============================================================
+    carro* h_A = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_B = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_C_baseline = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_C_vectorized = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_C_shared = static_cast<carro*>(std::malloc(dimensioni));
 
-    if (!h_A || !h_B || !h_C_baseline || !h_C_optimized) {
+    if (!h_A || !h_B || !h_C_baseline || !h_C_vectorized || !h_C_shared) {
         std::cerr << "Host memory allocation failed." << std::endl;
         return EXIT_FAILURE;
     }
 
-    for (int i = 0; i < N; i++) {
+    for (int i = 0; i < N; ++i) {
         h_A[i] = 1.0f;
         h_B[i] = 2.0f;
     }
 
-    // ----------------------------
-    // Device memory
-    // ----------------------------
-    float *d_A, *d_B, *d_C_baseline, *d_C_optimized;
+    // ============================================================
+    // MEMORIA DEVICE
+    // ============================================================
+    carro *d_A, *d_B, *d_C_baseline, *d_C_vectorized, *d_C_shared;
 
-    CUDA_CHECK(cudaMalloc(&d_A, size));
-    CUDA_CHECK(cudaMalloc(&d_B, size));
-    CUDA_CHECK(cudaMalloc(&d_C_baseline, size));
-    CUDA_CHECK(cudaMalloc(&d_C_optimized, size));
+    CUDA_CHECK(cudaMalloc(&d_A, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_B, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_C_baseline, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_C_vectorized, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_C_shared, dimensioni));
 
-    CUDA_CHECK(cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_A, h_A, dimensioni, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, h_B, dimensioni, cudaMemcpyHostToDevice));
 
-    // ----------------------------
-    // Launch configuration
-    // ----------------------------
-    int blockSize = 256;
-    int gridSize = (N + blockSize - 1) / blockSize;
-    int optimizedGridSize = ((N / 4) + blockSize - 1) / blockSize;
+    // ============================================================
+    // CONFIGURAZIONE LANCIO
+    // ============================================================
+    dim3 blocco(BLOCK_SIZE);
+    dim3 griglia((N + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 griglia_vectorized((n4 + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-    // ----------------------------
-    // CUDA events
-    // ----------------------------
+    // ============================================================
+    // EVENTI CUDA
+    // ============================================================
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
 
     float baseline_ms = 0.0f;
-    float optimized_ms = 0.0f;
+    float vectorized_ms = 0.0f;
+    float shared_ms = 0.0f;
 
     // ============================================================
     // WARMUP
-    // Warm up the GPU to reduce cold-start effects in measurements
     // ============================================================
-    baseline_kernel<<<gridSize, blockSize>>>(d_C_baseline, d_A, d_B, N);
+    baseline_kernel<<<griglia, blocco>>>(d_C_baseline, d_A, d_B, N);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    dogma_optimized_kernel<<<optimizedGridSize, blockSize>>>(
-        reinterpret_cast<float4*>(d_C_optimized),
+    vectorized_kernel<<<griglia_vectorized, blocco>>>(
+        reinterpret_cast<float4*>(d_C_vectorized),
         reinterpret_cast<const float4*>(d_A),
         reinterpret_cast<const float4*>(d_B),
-        N / 4
+        n4
     );
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
+    shared_memory_kernel<<<griglia, blocco>>>(d_C_shared, d_A, d_B, N);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
     // ============================================================
-    // BASELINE TEST
+    // TEST BASELINE
     // ============================================================
     CUDA_CHECK(cudaEventRecord(start));
-
-    for (int i = 0; i < ITERATIONS; i++) {
-        baseline_kernel<<<gridSize, blockSize>>>(d_C_baseline, d_A, d_B, N);
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        baseline_kernel<<<griglia, blocco>>>(d_C_baseline, d_A, d_B, N);
     }
-
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaEventElapsedTime(&baseline_ms, start, stop));
-
-    baseline_ms /= ITERATIONS;
+    baseline_ms /= ITERAZIONI;
 
     // ============================================================
-    // OPTIMIZED TEST
+    // TEST VECTORIZED
     // ============================================================
     CUDA_CHECK(cudaEventRecord(start));
-
-    for (int i = 0; i < ITERATIONS; i++) {
-        dogma_optimized_kernel<<<optimizedGridSize, blockSize>>>(
-            reinterpret_cast<float4*>(d_C_optimized),
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        vectorized_kernel<<<griglia_vectorized, blocco>>>(
+            reinterpret_cast<float4*>(d_C_vectorized),
             reinterpret_cast<const float4*>(d_A),
             reinterpret_cast<const float4*>(d_B),
-            N / 4
+            n4
         );
     }
-
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&optimized_ms, start, stop));
+    CUDA_CHECK(cudaEventElapsedTime(&vectorized_ms, start, stop));
+    vectorized_ms /= ITERAZIONI;
 
-    optimized_ms /= ITERATIONS;
+    // ============================================================
+    // TEST SHARED MEMORY
+    // ============================================================
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        shared_memory_kernel<<<griglia, blocco>>>(d_C_shared, d_A, d_B, N);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&shared_ms, start, stop));
+    shared_ms /= ITERAZIONI;
 
-    // Make sure everything is finished
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // ============================================================
-    // COPY RESULTS BACK
+    // COPIA RISULTATI SU HOST
     // ============================================================
-    CUDA_CHECK(cudaMemcpy(h_C_baseline, d_C_baseline, size, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_C_optimized, d_C_optimized, size, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C_baseline, d_C_baseline, dimensioni, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C_vectorized, d_C_vectorized, dimensioni, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C_shared, d_C_shared, dimensioni, cudaMemcpyDeviceToHost));
 
     // ============================================================
-    // RESULT VERIFICATION
+    // VALIDAZIONE
     // ============================================================
-    bool valid = true;
-    for (int i = 0; i < N; i++) {
-        if (std::fabs(h_C_baseline[i] - h_C_optimized[i]) > 1e-5f) {
-            std::cerr << "Mismatch at index " << i
+    bool valid_vectorized = true;
+    bool valid_shared = true;
+
+    for (int i = 0; i < N; ++i) {
+        if (std::fabs(h_C_baseline[i] - h_C_vectorized[i]) > 1e-5f) {
+            std::cerr << "Vectorized mismatch at index " << i
                       << " | baseline = " << h_C_baseline[i]
-                      << " | optimized = " << h_C_optimized[i]
+                      << " | vectorized = " << h_C_vectorized[i]
                       << std::endl;
-            valid = false;
+            valid_vectorized = false;
             break;
         }
     }
 
-    // ============================================================
-    // PERFORMANCE METRICS
-    // ============================================================
-    float speedup = (optimized_ms > 0.0f) ? baseline_ms / optimized_ms : 0.0f;
-    float improvement = (baseline_ms > 0.0f)
-        ? ((baseline_ms - optimized_ms) / baseline_ms) * 100.0f
-        : 0.0f;
+    for (int i = 0; i < N; ++i) {
+        if (std::fabs(h_C_baseline[i] - h_C_shared[i]) > 1e-5f) {
+            std::cerr << "Shared-memory mismatch at index " << i
+                      << " | baseline = " << h_C_baseline[i]
+                      << " | shared = " << h_C_shared[i]
+                      << std::endl;
+            valid_shared = false;
+            break;
+        }
+    }
 
-    size_t bytesProcessed = static_cast<size_t>(N) * sizeof(float);
-    float bandwidthGBs = (optimized_ms > 0.0f)
-        ? (bytesProcessed / (optimized_ms / 1000.0f)) / 1e9f
-        : 0.0f;
+    bool validazione_completa = valid_vectorized && valid_shared;
+
+    // ============================================================
+    // METRICHE
+    // ============================================================
+    float speedup_vectorized =
+        (vectorized_ms > 0.0f) ? (baseline_ms / vectorized_ms) : 0.0f;
+
+    float speedup_shared =
+        (shared_ms > 0.0f) ? (baseline_ms / shared_ms) : 0.0f;
+
+    float improvement_vectorized =
+        (baseline_ms > 0.0f) ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f : 0.0f;
+
+    float improvement_shared =
+        (baseline_ms > 0.0f) ? ((baseline_ms - shared_ms) / baseline_ms) * 100.0f : 0.0f;
+
+    size_t bytes_processed = static_cast<size_t>(N) * sizeof(carro);
+
+    float bandwidth_vectorized =
+        (vectorized_ms > 0.0f)
+            ? (bytes_processed / (vectorized_ms / 1000.0f)) / 1e9f
+            : 0.0f;
+
+    float bandwidth_shared =
+        (shared_ms > 0.0f)
+            ? (bytes_processed / (shared_ms / 1000.0f)) / 1e9f
+            : 0.0f;
 
     // ============================================================
     // OUTPUT
     // ============================================================
-    std::cout << "Validation: " << (valid ? "PASSED" : "FAILED") << "\n";
-    std::cout << "Iterations: " << ITERATIONS << "\n";
+    std::cout << "=== GPU Kernel Comparison ===\n\n";
+
+    std::cout << "Validation: " << (validazione_completa ? "PASSED" : "FAILED") << "\n";
+    std::cout << "Iterations: " << ITERAZIONI << "\n";
     std::cout << "Elements processed: " << N << "\n";
-    std::cout << "Bytes processed: " << bytesProcessed << "\n\n";
+    std::cout << "Bytes processed: " << bytes_processed << "\n\n";
 
     std::cout << "Baseline Time: " << baseline_ms << " ms\n";
-    std::cout << "Optimized Kernel Time: " << optimized_ms << " ms\n";
-    std::cout << "Speedup: " << speedup << "x\n";
-    std::cout << "Performance Improvement: " << improvement << "%\n";
-    std::cout << "Approx. Memory Bandwidth: " << bandwidthGBs << " GB/s\n";
+    std::cout << "Vectorized Kernel Time: " << vectorized_ms << " ms\n";
+    std::cout << "Shared Memory Kernel Time: " << shared_ms << " ms\n\n";
+
+    std::cout << "Vectorized Speedup: " << speedup_vectorized << "x\n";
+    std::cout << "Shared Memory Speedup: " << speedup_shared << "x\n\n";
+
+    std::cout << "Vectorized Improvement: " << improvement_vectorized << "%\n";
+    std::cout << "Shared Memory Improvement: " << improvement_shared << "%\n\n";
+
+    std::cout << "Approx. Vectorized Bandwidth: " << bandwidth_vectorized << " GB/s\n";
+    std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n";
 
     // ============================================================
-    // CLEANUP
+    // PULIZIA
     // ============================================================
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
@@ -224,12 +301,14 @@ int main()
     CUDA_CHECK(cudaFree(d_A));
     CUDA_CHECK(cudaFree(d_B));
     CUDA_CHECK(cudaFree(d_C_baseline));
-    CUDA_CHECK(cudaFree(d_C_optimized));
+    CUDA_CHECK(cudaFree(d_C_vectorized));
+    CUDA_CHECK(cudaFree(d_C_shared));
 
     std::free(h_A);
     std::free(h_B);
     std::free(h_C_baseline);
-    std::free(h_C_optimized);
+    std::free(h_C_vectorized);
+    std::free(h_C_shared);
 
-    return valid ? EXIT_SUCCESS : EXIT_FAILURE;
+    return validazione_completa ? EXIT_SUCCESS : EXIT_FAILURE;
 }
