@@ -2,12 +2,15 @@
 #include <cuda_runtime.h>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
+#include <limits>
 
 using carro = float;
 
 #define N (1 << 26)
 #define ITERAZIONI 500
 #define BLOCK_SIZE 256
+#define INNER_REPEAT 100
 
 #define CUDA_CHECK(chiamata)                                                      \
 do {                                                                              \
@@ -22,14 +25,19 @@ do {                                                                            
 // ============================================================
 // KERNEL DI BASE
 // ============================================================
-__global__ void baseline_kernel(carro* C, const carro* A, const carro* B, int n)
+__global__ void baseline_kernel(
+    carro* __restrict__ C,
+    const carro* __restrict__ A,
+    const carro* __restrict__ B,
+    int n)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < n) {
         carro val = 0.0f;
 
-        for (int k = 0; k < 100; ++k) {
+        #pragma unroll 8
+        for (int k = 0; k < INNER_REPEAT; ++k) {
             val += A[idx] * B[idx];
         }
 
@@ -46,11 +54,11 @@ __global__ void vectorized_kernel(
     const float4* __restrict__ B,
     int n4)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < n4) {
-        float4 a = A[idx];
-        float4 b = B[idx];
+        const float4 a = A[idx];
+        const float4 b = B[idx];
         float4 r;
 
         r.x = 0.0f;
@@ -58,7 +66,8 @@ __global__ void vectorized_kernel(
         r.z = 0.0f;
         r.w = 0.0f;
 
-        for (int k = 0; k < 100; ++k) {
+        #pragma unroll 8
+        for (int k = 0; k < INNER_REPEAT; ++k) {
             r.x += a.x * b.x;
             r.y += a.y * b.y;
             r.z += a.z * b.z;
@@ -73,16 +82,16 @@ __global__ void vectorized_kernel(
 // KERNEL CON SHARED MEMORY
 // ============================================================
 __global__ void shared_memory_kernel(
-    carro* C,
-    const carro* A,
-    const carro* B,
+    carro* __restrict__ C,
+    const carro* __restrict__ A,
+    const carro* __restrict__ B,
     int n)
 {
     __shared__ carro sA[BLOCK_SIZE];
     __shared__ carro sB[BLOCK_SIZE];
 
-    int tid = threadIdx.x;
-    int idx = blockIdx.x * blockDim.x + tid;
+    const int tid = threadIdx.x;
+    const int idx = blockIdx.x * blockDim.x + tid;
 
     if (idx < n) {
         sA[tid] = A[idx];
@@ -94,7 +103,8 @@ __global__ void shared_memory_kernel(
     if (idx < n) {
         carro val = 0.0f;
 
-        for (int k = 0; k < 100; ++k) {
+        #pragma unroll 8
+        for (int k = 0; k < INNER_REPEAT; ++k) {
             val += sA[tid] * sB[tid];
         }
 
@@ -102,9 +112,118 @@ __global__ void shared_memory_kernel(
     }
 }
 
+// ============================================================
+// VALIDAZIONE
+// ============================================================
+bool valida_array(
+    const carro* riferimento,
+    const carro* candidato,
+    int n,
+    const char* etichetta)
+{
+    for (int i = 0; i < n; ++i) {
+        if (std::fabs(riferimento[i] - candidato[i]) > 1e-5f) {
+            std::cerr << etichetta << " mismatch at index " << i
+                      << " | reference = " << riferimento[i]
+                      << " | candidate = " << candidato[i]
+                      << std::endl;
+            return false;
+        }
+    }
+    return true;
+}
+
+// ============================================================
+// HELPER TIMING BASELINE
+// ============================================================
+float esegui_baseline(
+    carro* d_C,
+    const carro* d_A,
+    const carro* d_B,
+    int n,
+    dim3 griglia,
+    dim3 blocco,
+    cudaEvent_t start,
+    cudaEvent_t stop)
+{
+    float ms = 0.0f;
+
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        baseline_kernel<<<griglia, blocco>>>(d_C, d_A, d_B, n);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
+
+    return ms / static_cast<float>(ITERAZIONI);
+}
+
+// ============================================================
+// HELPER TIMING VECTORIZED
+// ============================================================
+float esegui_vectorized(
+    carro* d_C,
+    const carro* d_A,
+    const carro* d_B,
+    int n4,
+    dim3 griglia,
+    dim3 blocco,
+    cudaEvent_t start,
+    cudaEvent_t stop)
+{
+    float ms = 0.0f;
+
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        vectorized_kernel<<<griglia, blocco>>>(
+            reinterpret_cast<float4*>(d_C),
+            reinterpret_cast<const float4*>(d_A),
+            reinterpret_cast<const float4*>(d_B),
+            n4
+        );
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
+
+    return ms / static_cast<float>(ITERAZIONI);
+}
+
+// ============================================================
+// HELPER TIMING SHARED
+// ============================================================
+float esegui_shared(
+    carro* d_C,
+    const carro* d_A,
+    const carro* d_B,
+    int n,
+    dim3 griglia,
+    dim3 blocco,
+    cudaEvent_t start,
+    cudaEvent_t stop)
+{
+    float ms = 0.0f;
+
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        shared_memory_kernel<<<griglia, blocco>>>(d_C, d_A, d_B, n);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
+
+    return ms / static_cast<float>(ITERAZIONI);
+}
+
 int main()
 {
-    const size_t dimensioni = N * sizeof(carro);
+    static_assert(N % 4 == 0, "N must be divisible by 4 for float4 vectorization.");
+
+    const size_t dimensioni = static_cast<size_t>(N) * sizeof(carro);
     const int n4 = N / 4;
 
     // ============================================================
@@ -154,10 +273,6 @@ int main()
     CUDA_CHECK(cudaEventCreate(&start));
     CUDA_CHECK(cudaEventCreate(&stop));
 
-    float baseline_ms = 0.0f;
-    float vectorized_ms = 0.0f;
-    float shared_ms = 0.0f;
-
     // ============================================================
     // WARMUP
     // ============================================================
@@ -179,48 +294,16 @@ int main()
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // ============================================================
-    // TEST BASELINE
+    // TEST PRINCIPALI
     // ============================================================
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERAZIONI; ++i) {
-        baseline_kernel<<<griglia, blocco>>>(d_C_baseline, d_A, d_B, N);
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&baseline_ms, start, stop));
-    baseline_ms /= ITERAZIONI;
+    const float baseline_ms =
+        esegui_baseline(d_C_baseline, d_A, d_B, N, griglia, blocco, start, stop);
 
-    // ============================================================
-    // TEST VETTORIALIZZATO
-    // ============================================================
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERAZIONI; ++i) {
-        vectorized_kernel<<<griglia_vectorized, blocco>>>(
-            reinterpret_cast<float4*>(d_C_vectorized),
-            reinterpret_cast<const float4*>(d_A),
-            reinterpret_cast<const float4*>(d_B),
-            n4
-        );
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&vectorized_ms, start, stop));
-    vectorized_ms /= ITERAZIONI;
+    const float vectorized_ms =
+        esegui_vectorized(d_C_vectorized, d_A, d_B, n4, griglia_vectorized, blocco, start, stop);
 
-    // ============================================================
-    // TEST SHARED MEMORY
-    // ============================================================
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERAZIONI; ++i) {
-        shared_memory_kernel<<<griglia, blocco>>>(d_C_shared, d_A, d_B, N);
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&shared_ms, start, stop));
-    shared_ms /= ITERAZIONI;
+    const float shared_ms =
+        esegui_shared(d_C_shared, d_A, d_B, N, griglia, blocco, start, stop);
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -234,63 +317,50 @@ int main()
     // ============================================================
     // VALIDAZIONE
     // ============================================================
-    bool valid_vectorized = true;
-    bool valid_shared = true;
+    const bool valid_vectorized =
+        valida_array(h_C_baseline, h_C_vectorized, N, "Vectorized");
 
-    for (int i = 0; i < N; ++i) {
-        if (std::fabs(h_C_baseline[i] - h_C_vectorized[i]) > 1e-5f) {
-            std::cerr << "Vectorized mismatch at index " << i
-                      << " | baseline = " << h_C_baseline[i]
-                      << " | vectorized = " << h_C_vectorized[i]
-                      << std::endl;
-            valid_vectorized = false;
-            break;
-        }
-    }
+    const bool valid_shared =
+        valida_array(h_C_baseline, h_C_shared, N, "Shared");
 
-    for (int i = 0; i < N; ++i) {
-        if (std::fabs(h_C_baseline[i] - h_C_shared[i]) > 1e-5f) {
-            std::cerr << "Shared-memory mismatch at index " << i
-                      << " | baseline = " << h_C_baseline[i]
-                      << " | shared = " << h_C_shared[i]
-                      << std::endl;
-            valid_shared = false;
-            break;
-        }
-    }
-
-    bool validazione_completa = valid_vectorized && valid_shared;
+    const bool validazione_completa = valid_vectorized && valid_shared;
 
     // ============================================================
     // METRICHE
     // ============================================================
-    float speedup_vectorized =
+    const float speedup_vectorized =
         (vectorized_ms > 0.0f) ? (baseline_ms / vectorized_ms) : 0.0f;
 
-    float speedup_shared =
+    const float speedup_shared =
         (shared_ms > 0.0f) ? (baseline_ms / shared_ms) : 0.0f;
 
-    float improvement_vectorized =
-        (baseline_ms > 0.0f) ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f : 0.0f;
+    const float improvement_vectorized =
+        (baseline_ms > 0.0f)
+            ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f
+            : 0.0f;
 
-    float improvement_shared =
-        (baseline_ms > 0.0f) ? ((baseline_ms - shared_ms) / baseline_ms) * 100.0f : 0.0f;
+    const float improvement_shared =
+        (baseline_ms > 0.0f)
+            ? ((baseline_ms - shared_ms) / baseline_ms) * 100.0f
+            : 0.0f;
 
-    size_t bytes_processed = static_cast<size_t>(N) * sizeof(carro);
+    const size_t bytes_processed = static_cast<size_t>(N) * sizeof(carro);
 
-    float bandwidth_vectorized =
+    const float bandwidth_vectorized =
         (vectorized_ms > 0.0f)
             ? (bytes_processed / (vectorized_ms / 1000.0f)) / 1e9f
             : 0.0f;
 
-    float bandwidth_shared =
+    const float bandwidth_shared =
         (shared_ms > 0.0f)
             ? (bytes_processed / (shared_ms / 1000.0f)) / 1e9f
             : 0.0f;
 
     // ============================================================
-    // OUTPUT
+    // BLOCK SIZE TUNING SUL KERNEL VETTORIALIZZATO
     // ============================================================
+    std::cout << std::fixed << std::setprecision(5);
+
     std::cout << "=== GPU Kernel Comparison ===\n\n";
 
     std::cout << "Validation: " << (validazione_completa ? "PASSED" : "FAILED") << "\n";
@@ -311,32 +381,39 @@ int main()
     std::cout << "Approx. Vectorized Bandwidth: " << bandwidth_vectorized << " GB/s\n";
     std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n";
 
-    // ============================================================
-    // BLOCK SIZE TUNING
-    // ============================================================
-    std::cout << "\n=== Block Size Tuning ===\n";
+    std::cout << "\n=== Vectorized Block Size Tuning ===\n";
 
-    int block_sizes[] = {64, 128, 256, 512};
+    const int block_sizes[] = {64, 128, 256, 512};
+
+    float best_vectorized_time = std::numeric_limits<float>::max();
+    int best_vectorized_block = -1;
 
     for (int bs : block_sizes) {
         dim3 tuning_blocco(bs);
-        dim3 tuning_griglia((N + bs - 1) / bs);
+        dim3 tuning_griglia((n4 + bs - 1) / bs);
 
-        float time_ms = 0.0f;
-
-        CUDA_CHECK(cudaEventRecord(start));
-        for (int i = 0; i < ITERAZIONI; ++i) {
-            baseline_kernel<<<tuning_griglia, tuning_blocco>>>(d_C_baseline, d_A, d_B, N);
-        }
-        CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaEventRecord(stop));
-        CUDA_CHECK(cudaEventSynchronize(stop));
-        CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
-
-        time_ms /= ITERAZIONI;
+        const float time_ms =
+            esegui_vectorized(
+                d_C_vectorized,
+                d_A,
+                d_B,
+                n4,
+                tuning_griglia,
+                tuning_blocco,
+                start,
+                stop
+            );
 
         std::cout << "Block Size " << bs << " -> " << time_ms << " ms\n";
+
+        if (time_ms < best_vectorized_time) {
+            best_vectorized_time = time_ms;
+            best_vectorized_block = bs;
+        }
     }
+
+    std::cout << "\nBest Vectorized Block Size: " << best_vectorized_block << "\n";
+    std::cout << "Best Vectorized Time: " << best_vectorized_time << " ms\n";
 
     // ============================================================
     // PULIZIA
