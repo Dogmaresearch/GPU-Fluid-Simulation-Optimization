@@ -83,9 +83,8 @@ __global__ void vectorized_kernel(
 
 // ============================================================
 // SHARED MEMORY KERNEL
-// Loads input values into shared memory before repeated use.
-// This is included for comparison, even if it may not help much
-// for this workload.
+// Included for comparison.
+// For this workload it may not provide meaningful benefit.
 // ============================================================
 __global__ void shared_memory_kernel(
     value_t* c,
@@ -154,7 +153,54 @@ __global__ void dogma_ultra_kernel(
 }
 
 // ============================================================
-// Utility: compare two host arrays
+// DOGMA FINAL KERNEL
+// 2x float4 per thread + Grid-Stride + Register Tiling
+// ============================================================
+__global__ void dogma_final_kernel(
+    float4* __restrict__ c,
+    const float4* __restrict__ a,
+    const float4* __restrict__ b,
+    int n4)
+{
+    int stride = blockDim.x * gridDim.x;
+
+    for (int idx = blockIdx.x * blockDim.x + threadIdx.x;
+         idx < (n4 / 2);
+         idx += stride)
+    {
+        int base = idx * 2;
+
+        float4 a0 = a[base];
+        float4 a1 = a[base + 1];
+        float4 b0 = b[base];
+        float4 b1 = b[base + 1];
+
+        float4 r0;
+        float4 r1;
+
+        r0.x = 0.0f; r0.y = 0.0f; r0.z = 0.0f; r0.w = 0.0f;
+        r1.x = 0.0f; r1.y = 0.0f; r1.z = 0.0f; r1.w = 0.0f;
+
+        #pragma unroll 20
+        for (int k = 0; k < INNER_REPEAT; ++k) {
+            r0.x += a0.x * b0.x;
+            r0.y += a0.y * b0.y;
+            r0.z += a0.z * b0.z;
+            r0.w += a0.w * b0.w;
+
+            r1.x += a1.x * b1.x;
+            r1.y += a1.y * b1.y;
+            r1.z += a1.z * b1.z;
+            r1.w += a1.w * b1.w;
+        }
+
+        c[base]     = r0;
+        c[base + 1] = r1;
+    }
+}
+
+// ============================================================
+// Validation helper
 // ============================================================
 bool validate_arrays(
     const value_t* reference,
@@ -175,7 +221,7 @@ bool validate_arrays(
 }
 
 // ============================================================
-// Utility: run baseline timing
+// Timing helpers
 // ============================================================
 float run_baseline(
     value_t* d_c,
@@ -201,9 +247,6 @@ float run_baseline(
     return ms / static_cast<float>(ITERATIONS);
 }
 
-// ============================================================
-// Utility: run vectorized timing
-// ============================================================
 float run_vectorized(
     value_t* d_c,
     const value_t* d_a,
@@ -232,9 +275,6 @@ float run_vectorized(
     return ms / static_cast<float>(ITERATIONS);
 }
 
-// ============================================================
-// Utility: run shared memory timing
-// ============================================================
 float run_shared(
     value_t* d_c,
     const value_t* d_a,
@@ -259,9 +299,6 @@ float run_shared(
     return ms / static_cast<float>(ITERATIONS);
 }
 
-// ============================================================
-// Utility: run dogma ultra timing
-// ============================================================
 float run_dogma_ultra(
     value_t* d_c,
     const value_t* d_a,
@@ -290,9 +327,38 @@ float run_dogma_ultra(
     return ms / static_cast<float>(ITERATIONS);
 }
 
+float run_dogma_final(
+    value_t* d_c,
+    const value_t* d_a,
+    const value_t* d_b,
+    int n4,
+    dim3 grid,
+    dim3 block,
+    cudaEvent_t start,
+    cudaEvent_t stop)
+{
+    float ms = 0.0f;
+
+    CUDA_CHECK(cudaEventRecord(start));
+    for (int i = 0; i < ITERATIONS; ++i) {
+        dogma_final_kernel<<<grid, block>>>(
+            reinterpret_cast<float4*>(d_c),
+            reinterpret_cast<const float4*>(d_a),
+            reinterpret_cast<const float4*>(d_b),
+            n4);
+    }
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
+
+    return ms / static_cast<float>(ITERATIONS);
+}
+
 int main()
 {
     static_assert(N % 4 == 0, "N must be divisible by 4 for float4 vectorization.");
+    static_assert((N / 4) % 2 == 0, "N/4 must be even for dogma_final_kernel.");
 
     const int n = N;
     const int n4 = N / 4;
@@ -306,9 +372,11 @@ int main()
     value_t* h_c_baseline = static_cast<value_t*>(std::malloc(bytes));
     value_t* h_c_vectorized = static_cast<value_t*>(std::malloc(bytes));
     value_t* h_c_shared = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_dogma = static_cast<value_t*>(std::malloc(bytes));
+    value_t* h_c_dogma_ultra = static_cast<value_t*>(std::malloc(bytes));
+    value_t* h_c_dogma_final = static_cast<value_t*>(std::malloc(bytes));
 
-    if (!h_a || !h_b || !h_c_baseline || !h_c_vectorized || !h_c_shared || !h_c_dogma) {
+    if (!h_a || !h_b || !h_c_baseline || !h_c_vectorized || !h_c_shared ||
+        !h_c_dogma_ultra || !h_c_dogma_final) {
         std::cerr << "Host memory allocation failed." << std::endl;
         return EXIT_FAILURE;
     }
@@ -321,14 +389,16 @@ int main()
     // ============================================================
     // DEVICE MEMORY
     // ============================================================
-    value_t *d_a, *d_b, *d_c_baseline, *d_c_vectorized, *d_c_shared, *d_c_dogma;
+    value_t *d_a, *d_b;
+    value_t *d_c_baseline, *d_c_vectorized, *d_c_shared, *d_c_dogma_ultra, *d_c_dogma_final;
 
     CUDA_CHECK(cudaMalloc(&d_a, bytes));
     CUDA_CHECK(cudaMalloc(&d_b, bytes));
     CUDA_CHECK(cudaMalloc(&d_c_baseline, bytes));
     CUDA_CHECK(cudaMalloc(&d_c_vectorized, bytes));
     CUDA_CHECK(cudaMalloc(&d_c_shared, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_dogma, bytes));
+    CUDA_CHECK(cudaMalloc(&d_c_dogma_ultra, bytes));
+    CUDA_CHECK(cudaMalloc(&d_c_dogma_final, bytes));
 
     CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
@@ -343,11 +413,11 @@ int main()
     dim3 default_grid((n + BLOCK_SIZE - 1) / BLOCK_SIZE);
     dim3 default_grid_vec((n4 + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
-    // For dogma ultra: choose a grid size tied to SM count
     dim3 dogma_grid(num_sms * 32);
+    dim3 dogma_block(BLOCK_SIZE);
 
     // ============================================================
-    // CUDA EVENTS
+    // EVENTS
     // ============================================================
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
@@ -372,8 +442,16 @@ int main()
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    dogma_ultra_kernel<<<dogma_grid, default_block>>>(
-        reinterpret_cast<float4*>(d_c_dogma),
+    dogma_ultra_kernel<<<dogma_grid, dogma_block>>>(
+        reinterpret_cast<float4*>(d_c_dogma_ultra),
+        reinterpret_cast<const float4*>(d_a),
+        reinterpret_cast<const float4*>(d_b),
+        n4);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    dogma_final_kernel<<<dogma_grid, dogma_block>>>(
+        reinterpret_cast<float4*>(d_c_dogma_final),
         reinterpret_cast<const float4*>(d_a),
         reinterpret_cast<const float4*>(d_b),
         n4);
@@ -395,9 +473,13 @@ int main()
         d_c_shared, d_a, d_b, n,
         default_grid, default_block, start, stop);
 
-    const float dogma_ms = run_dogma_ultra(
-        d_c_dogma, d_a, d_b, n4,
-        dogma_grid, default_block, start, stop);
+    const float dogma_ultra_ms = run_dogma_ultra(
+        d_c_dogma_ultra, d_a, d_b, n4,
+        dogma_grid, dogma_block, start, stop);
+
+    const float dogma_final_ms = run_dogma_final(
+        d_c_dogma_final, d_a, d_b, n4,
+        dogma_grid, dogma_block, start, stop);
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -407,37 +489,65 @@ int main()
     CUDA_CHECK(cudaMemcpy(h_c_baseline, d_c_baseline, bytes, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(h_c_vectorized, d_c_vectorized, bytes, cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(h_c_shared, d_c_shared, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_dogma, d_c_dogma, bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_c_dogma_ultra, d_c_dogma_ultra, bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_c_dogma_final, d_c_dogma_final, bytes, cudaMemcpyDeviceToHost));
 
     // ============================================================
     // VALIDATION
     // ============================================================
-    const bool valid_vectorized = validate_arrays(h_c_baseline, h_c_vectorized, n, "Vectorized");
-    const bool valid_shared = validate_arrays(h_c_baseline, h_c_shared, n, "Shared");
-    const bool valid_dogma = validate_arrays(h_c_baseline, h_c_dogma, n, "Dogma Ultra");
+    const bool valid_vectorized =
+        validate_arrays(h_c_baseline, h_c_vectorized, n, "Vectorized");
 
-    const bool all_valid = valid_vectorized && valid_shared && valid_dogma;
+    const bool valid_shared =
+        validate_arrays(h_c_baseline, h_c_shared, n, "Shared");
+
+    const bool valid_dogma_ultra =
+        validate_arrays(h_c_baseline, h_c_dogma_ultra, n, "Dogma Ultra");
+
+    const bool valid_dogma_final =
+        validate_arrays(h_c_baseline, h_c_dogma_final, n, "Dogma Final");
+
+    const bool all_valid =
+        valid_vectorized && valid_shared && valid_dogma_ultra && valid_dogma_final;
 
     // ============================================================
     // METRICS
     // ============================================================
-    const float speedup_vectorized = (vectorized_ms > 0.0f) ? (baseline_ms / vectorized_ms) : 0.0f;
-    const float speedup_shared = (shared_ms > 0.0f) ? (baseline_ms / shared_ms) : 0.0f;
-    const float speedup_dogma = (dogma_ms > 0.0f) ? (baseline_ms / dogma_ms) : 0.0f;
+    const float speedup_vectorized =
+        (vectorized_ms > 0.0f) ? (baseline_ms / vectorized_ms) : 0.0f;
+
+    const float speedup_shared =
+        (shared_ms > 0.0f) ? (baseline_ms / shared_ms) : 0.0f;
+
+    const float speedup_dogma_ultra =
+        (dogma_ultra_ms > 0.0f) ? (baseline_ms / dogma_ultra_ms) : 0.0f;
+
+    const float speedup_dogma_final =
+        (dogma_final_ms > 0.0f) ? (baseline_ms / dogma_final_ms) : 0.0f;
 
     const float improvement_vectorized =
         (baseline_ms > 0.0f) ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f : 0.0f;
+
     const float improvement_shared =
         (baseline_ms > 0.0f) ? ((baseline_ms - shared_ms) / baseline_ms) * 100.0f : 0.0f;
-    const float improvement_dogma =
-        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_ms) / baseline_ms) * 100.0f : 0.0f;
+
+    const float improvement_dogma_ultra =
+        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_ultra_ms) / baseline_ms) * 100.0f : 0.0f;
+
+    const float improvement_dogma_final =
+        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_final_ms) / baseline_ms) * 100.0f : 0.0f;
 
     const float bandwidth_vectorized =
         (vectorized_ms > 0.0f) ? (bytes / (vectorized_ms / 1000.0f)) / 1e9f : 0.0f;
+
     const float bandwidth_shared =
         (shared_ms > 0.0f) ? (bytes / (shared_ms / 1000.0f)) / 1e9f : 0.0f;
-    const float bandwidth_dogma =
-        (dogma_ms > 0.0f) ? (bytes / (dogma_ms / 1000.0f)) / 1e9f : 0.0f;
+
+    const float bandwidth_dogma_ultra =
+        (dogma_ultra_ms > 0.0f) ? (bytes / (dogma_ultra_ms / 1000.0f)) / 1e9f : 0.0f;
+
+    const float bandwidth_dogma_final =
+        (dogma_final_ms > 0.0f) ? (bytes / (dogma_final_ms / 1000.0f)) / 1e9f : 0.0f;
 
     // ============================================================
     // OUTPUT
@@ -455,24 +565,28 @@ int main()
     std::cout << "Baseline Time: " << baseline_ms << " ms\n";
     std::cout << "Vectorized Kernel Time: " << vectorized_ms << " ms\n";
     std::cout << "Shared Memory Kernel Time: " << shared_ms << " ms\n";
-    std::cout << "Dogma Ultra Kernel Time: " << dogma_ms << " ms\n\n";
+    std::cout << "Dogma Ultra Kernel Time: " << dogma_ultra_ms << " ms\n";
+    std::cout << "Dogma Final Kernel Time: " << dogma_final_ms << " ms\n\n";
 
     std::cout << "Vectorized Speedup: " << speedup_vectorized << "x\n";
     std::cout << "Shared Memory Speedup: " << speedup_shared << "x\n";
-    std::cout << "Dogma Ultra Speedup: " << speedup_dogma << "x\n\n";
+    std::cout << "Dogma Ultra Speedup: " << speedup_dogma_ultra << "x\n";
+    std::cout << "Dogma Final Speedup: " << speedup_dogma_final << "x\n\n";
 
     std::cout << "Vectorized Improvement: " << improvement_vectorized << "%\n";
     std::cout << "Shared Memory Improvement: " << improvement_shared << "%\n";
-    std::cout << "Dogma Ultra Improvement: " << improvement_dogma << "%\n\n";
+    std::cout << "Dogma Ultra Improvement: " << improvement_dogma_ultra << "%\n";
+    std::cout << "Dogma Final Improvement: " << improvement_dogma_final << "%\n\n";
 
     std::cout << "Approx. Vectorized Bandwidth: " << bandwidth_vectorized << " GB/s\n";
     std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n";
-    std::cout << "Approx. Dogma Ultra Bandwidth: " << bandwidth_dogma << " GB/s\n";
+    std::cout << "Approx. Dogma Ultra Bandwidth: " << bandwidth_dogma_ultra << " GB/s\n";
+    std::cout << "Approx. Dogma Final Bandwidth: " << bandwidth_dogma_final << " GB/s\n";
 
     // ============================================================
-    // BLOCK SIZE TUNING FOR DOGMA ULTRA
+    // BLOCK SIZE TUNING FOR DOGMA FINAL
     // ============================================================
-    std::cout << "\n=== Dogma Ultra Block Size Tuning ===\n";
+    std::cout << "\n=== Dogma Final Block Size Tuning ===\n";
 
     const std::vector<int> block_sizes = {64, 128, 256, 512};
 
@@ -484,8 +598,8 @@ int main()
 
         CUDA_CHECK(cudaEventRecord(start));
         for (int i = 0; i < ITERATIONS; ++i) {
-            dogma_ultra_kernel<<<tuning_grid, tuning_block>>>(
-                reinterpret_cast<float4*>(d_c_dogma),
+            dogma_final_kernel<<<tuning_grid, tuning_block>>>(
+                reinterpret_cast<float4*>(d_c_dogma_final),
                 reinterpret_cast<const float4*>(d_a),
                 reinterpret_cast<const float4*>(d_b),
                 n4);
@@ -511,14 +625,16 @@ int main()
     CUDA_CHECK(cudaFree(d_c_baseline));
     CUDA_CHECK(cudaFree(d_c_vectorized));
     CUDA_CHECK(cudaFree(d_c_shared));
-    CUDA_CHECK(cudaFree(d_c_dogma));
+    CUDA_CHECK(cudaFree(d_c_dogma_ultra));
+    CUDA_CHECK(cudaFree(d_c_dogma_final));
 
     std::free(h_a);
     std::free(h_b);
     std::free(h_c_baseline);
     std::free(h_c_vectorized);
     std::free(h_c_shared);
-    std::free(h_c_dogma);
+    std::free(h_c_dogma_ultra);
+    std::free(h_c_dogma_final);
 
     return all_valid ? EXIT_SUCCESS : EXIT_FAILURE;
 }
