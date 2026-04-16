@@ -73,7 +73,7 @@ Each kernel is tested with:
 
 ---
 
-## 📊 Best Observed Results (Tesla T4 - Google Colab)
+## 📊 Best Observed Results (Google Colab)
 
 - Elements: 67,108,864  
 - Bytes processed: 268,435,456  
