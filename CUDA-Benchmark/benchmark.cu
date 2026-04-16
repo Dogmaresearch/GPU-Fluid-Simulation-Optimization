@@ -4,18 +4,18 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
-#include <vector>
+#include <limits>
 
-using value_t = float;
+using carro = float;
 
 #define N (1 << 26)
-#define ITERATIONS 500
+#define ITERAZIONI 500
 #define BLOCK_SIZE 256
 #define INNER_REPEAT 100
 
-#define CUDA_CHECK(call)                                                          \
+#define CUDA_CHECK(chiamata)                                                      \
 do {                                                                              \
-    cudaError_t err = (call);                                                     \
+    cudaError_t err = (chiamata);                                                 \
     if (err != cudaSuccess) {                                                     \
         std::cerr << "CUDA error: " << cudaGetErrorString(err)                    \
                   << " at line " << __LINE__ << std::endl;                        \
@@ -24,259 +24,109 @@ do {                                                                            
 } while (0)
 
 // ============================================================
-// BASELINE KERNEL
+// KERNEL DI BASE
 // ============================================================
 __global__ void baseline_kernel(
-    value_t* c,
-    const value_t* a,
-    const value_t* b,
+    carro* __restrict__ C,
+    const carro* __restrict__ A,
+    const carro* __restrict__ B,
     int n)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < n) {
-        value_t val = 0.0f;
+        carro val = 0.0f;
 
-        #pragma unroll 4
+        #pragma unroll 8
         for (int k = 0; k < INNER_REPEAT; ++k) {
-            val += a[idx] * b[idx];
+            val += A[idx] * B[idx];
         }
 
-        c[idx] = val;
+        C[idx] = val;
     }
 }
 
 // ============================================================
-// VECTORIZED KERNEL
+// KERNEL VETTORIALIZZATO (float4)
 // ============================================================
 __global__ void vectorized_kernel(
-    float4* __restrict__ c,
-    const float4* __restrict__ a,
-    const float4* __restrict__ b,
+    float4* __restrict__ C,
+    const float4* __restrict__ A,
+    const float4* __restrict__ B,
     int n4)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < n4) {
-        float4 av = a[idx];
-        float4 bv = b[idx];
-        float4 rv;
+        const float4 a = A[idx];
+        const float4 b = B[idx];
+        float4 r;
 
-        rv.x = 0.0f;
-        rv.y = 0.0f;
-        rv.z = 0.0f;
-        rv.w = 0.0f;
+        r.x = 0.0f;
+        r.y = 0.0f;
+        r.z = 0.0f;
+        r.w = 0.0f;
 
-        #pragma unroll 4
+        #pragma unroll 8
         for (int k = 0; k < INNER_REPEAT; ++k) {
-            rv.x += av.x * bv.x;
-            rv.y += av.y * bv.y;
-            rv.z += av.z * bv.z;
-            rv.w += av.w * bv.w;
+            r.x += a.x * b.x;
+            r.y += a.y * b.y;
+            r.z += a.z * b.z;
+            r.w += a.w * b.w;
         }
 
-        c[idx] = rv;
+        C[idx] = r;
     }
 }
 
 // ============================================================
-// SHARED MEMORY KERNEL
+// KERNEL CON SHARED MEMORY
 // ============================================================
 __global__ void shared_memory_kernel(
-    value_t* c,
-    const value_t* a,
-    const value_t* b,
+    carro* __restrict__ C,
+    const carro* __restrict__ A,
+    const carro* __restrict__ B,
     int n)
 {
-    __shared__ value_t sA[BLOCK_SIZE];
-    __shared__ value_t sB[BLOCK_SIZE];
+    __shared__ carro sA[BLOCK_SIZE];
+    __shared__ carro sB[BLOCK_SIZE];
 
-    int tid = threadIdx.x;
-    int idx = blockIdx.x * blockDim.x + tid;
+    const int tid = threadIdx.x;
+    const int idx = blockIdx.x * blockDim.x + tid;
 
     if (idx < n) {
-        sA[tid] = a[idx];
-        sB[tid] = b[idx];
+        sA[tid] = A[idx];
+        sB[tid] = B[idx];
     }
 
     __syncthreads();
 
     if (idx < n) {
-        value_t val = 0.0f;
+        carro val = 0.0f;
 
-        #pragma unroll 4
+        #pragma unroll 8
         for (int k = 0; k < INNER_REPEAT; ++k) {
             val += sA[tid] * sB[tid];
         }
 
-        c[idx] = val;
+        C[idx] = val;
     }
 }
 
 // ============================================================
-// DOGMA ULTRA KERNEL
+// HELPER DI VALIDAZIONE
 // ============================================================
-__global__ void dogma_ultra_kernel(
-    float4* __restrict__ c,
-    const float4* __restrict__ a,
-    const float4* __restrict__ b,
-    int n4)
-{
-    for (int idx = blockIdx.x * blockDim.x + threadIdx.x;
-         idx < n4;
-         idx += blockDim.x * gridDim.x)
-    {
-        float4 av = a[idx];
-        float4 bv = b[idx];
-        float4 rv;
-
-        rv.x = 0.0f;
-        rv.y = 0.0f;
-        rv.z = 0.0f;
-        rv.w = 0.0f;
-
-        #pragma unroll 10
-        for (int k = 0; k < INNER_REPEAT; ++k) {
-            rv.x += av.x * bv.x;
-            rv.y += av.y * bv.y;
-            rv.z += av.z * bv.z;
-            rv.w += av.w * bv.w;
-        }
-
-        c[idx] = rv;
-    }
-}
-
-// ============================================================
-// DOGMA FINAL KERNEL
-// ============================================================
-__global__ void dogma_final_kernel(
-    float4* __restrict__ c,
-    const float4* __restrict__ a,
-    const float4* __restrict__ b,
-    int n4)
-{
-    int stride = blockDim.x * gridDim.x;
-
-    for (int idx = blockIdx.x * blockDim.x + threadIdx.x;
-         idx < (n4 / 2);
-         idx += stride)
-    {
-        int base = idx * 2;
-
-        float4 a0 = a[base];
-        float4 a1 = a[base + 1];
-        float4 b0 = b[base];
-        float4 b1 = b[base + 1];
-
-        float4 r0;
-        float4 r1;
-
-        r0.x = 0.0f; r0.y = 0.0f; r0.z = 0.0f; r0.w = 0.0f;
-        r1.x = 0.0f; r1.y = 0.0f; r1.z = 0.0f; r1.w = 0.0f;
-
-        #pragma unroll 20
-        for (int k = 0; k < INNER_REPEAT; ++k) {
-            r0.x += a0.x * b0.x;
-            r0.y += a0.y * b0.y;
-            r0.z += a0.z * b0.z;
-            r0.w += a0.w * b0.w;
-
-            r1.x += a1.x * b1.x;
-            r1.y += a1.y * b1.y;
-            r1.z += a1.z * b1.z;
-            r1.w += a1.w * b1.w;
-        }
-
-        c[base]     = r0;
-        c[base + 1] = r1;
-    }
-}
-
-// ============================================================
-// DOGMA GHOST KERNEL
-// ============================================================
-__global__ void dogma_ghost_kernel(
-    float4* __restrict__ c,
-    const float4* __restrict__ a,
-    const float4* __restrict__ b,
-    int n4)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-    for (; idx < n4; idx += stride) {
-        float4 av = a[idx];
-        float4 bv = b[idx];
-        float4 rv;
-
-        rv.x = 0.0f;
-        rv.y = 0.0f;
-        rv.z = 0.0f;
-        rv.w = 0.0f;
-
-        #pragma unroll 8
-        for (int k = 0; k < INNER_REPEAT; ++k) {
-            rv.x += av.x * bv.x;
-            rv.y += av.y * bv.y;
-            rv.z += av.z * bv.z;
-            rv.w += av.w * bv.w;
-        }
-
-        c[idx] = rv;
-    }
-}
-
-// ============================================================
-// DOGMA APEX KERNEL
-// Lean vectorized kernel with low register pressure,
-// grid-stride loop, and 128-thread friendly launch.
-// ============================================================
-__global__ void dogma_apex_kernel(
-    float4* __restrict__ c,
-    const float4* __restrict__ a,
-    const float4* __restrict__ b,
-    int n4)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-    for (int i = idx; i < n4; i += stride) {
-        float4 av = a[i];
-        float4 bv = b[i];
-        float4 res;
-
-        res.x = 0.0f;
-        res.y = 0.0f;
-        res.z = 0.0f;
-        res.w = 0.0f;
-
-        #pragma unroll 16
-        for (int k = 0; k < INNER_REPEAT; ++k) {
-            res.x += av.x * bv.x;
-            res.y += av.y * bv.y;
-            res.z += av.z * bv.z;
-            res.w += av.w * bv.w;
-        }
-
-        c[i] = res;
-    }
-}
-
-// ============================================================
-// Validation helper
-// ============================================================
-bool validate_arrays(
-    const value_t* reference,
-    const value_t* candidate,
+bool valida_array(
+    const carro* riferimento,
+    const carro* candidato,
     int n,
-    const char* label)
+    const char* etichetta)
 {
     for (int i = 0; i < n; ++i) {
-        if (std::fabs(reference[i] - candidate[i]) > 1e-5f) {
-            std::cerr << label << " mismatch at index " << i
-                      << " | reference = " << reference[i]
-                      << " | candidate = " << candidate[i]
+        if (std::fabs(riferimento[i] - candidato[i]) > 1e-5f) {
+            std::cerr << etichetta << " mismatch at index " << i
+                      << " | reference = " << riferimento[i]
+                      << " | candidate = " << candidato[i]
                       << std::endl;
             return false;
         }
@@ -285,270 +135,140 @@ bool validate_arrays(
 }
 
 // ============================================================
-// Timing helpers
+// TIMING HELPER BASELINE
 // ============================================================
-float run_baseline(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
+float esegui_baseline(
+    carro* d_C,
+    const carro* d_A,
+    const carro* d_B,
     int n,
-    dim3 grid,
-    dim3 block,
+    dim3 griglia,
+    dim3 blocco,
     cudaEvent_t start,
     cudaEvent_t stop)
 {
     float ms = 0.0f;
 
     CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        baseline_kernel<<<grid, block>>>(d_c, d_a, d_b, n);
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        baseline_kernel<<<griglia, blocco>>>(d_C, d_A, d_B, n);
     }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
 
-    return ms / static_cast<float>(ITERATIONS);
+    return ms / static_cast<float>(ITERAZIONI);
 }
 
-float run_vectorized(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
+// ============================================================
+// TIMING HELPER VECTORIZED
+// ============================================================
+float esegui_vectorized(
+    carro* d_C,
+    const carro* d_A,
+    const carro* d_B,
     int n4,
-    dim3 grid,
-    dim3 block,
+    dim3 griglia,
+    dim3 blocco,
     cudaEvent_t start,
     cudaEvent_t stop)
 {
     float ms = 0.0f;
 
     CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        vectorized_kernel<<<grid, block>>>(
-            reinterpret_cast<float4*>(d_c),
-            reinterpret_cast<const float4*>(d_a),
-            reinterpret_cast<const float4*>(d_b),
-            n4);
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        vectorized_kernel<<<griglia, blocco>>>(
+            reinterpret_cast<float4*>(d_C),
+            reinterpret_cast<const float4*>(d_A),
+            reinterpret_cast<const float4*>(d_B),
+            n4
+        );
     }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
 
-    return ms / static_cast<float>(ITERATIONS);
+    return ms / static_cast<float>(ITERAZIONI);
 }
 
-float run_shared(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
+// ============================================================
+// TIMING HELPER SHARED
+// ============================================================
+float esegui_shared(
+    carro* d_C,
+    const carro* d_A,
+    const carro* d_B,
     int n,
-    dim3 grid,
-    dim3 block,
+    dim3 griglia,
+    dim3 blocco,
     cudaEvent_t start,
     cudaEvent_t stop)
 {
     float ms = 0.0f;
 
     CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        shared_memory_kernel<<<grid, block>>>(d_c, d_a, d_b, n);
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        shared_memory_kernel<<<griglia, blocco>>>(d_C, d_A, d_B, n);
     }
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaEventRecord(stop));
     CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
 
-    return ms / static_cast<float>(ITERATIONS);
-}
-
-float run_dogma_ultra(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
-    int n4,
-    dim3 grid,
-    dim3 block,
-    cudaEvent_t start,
-    cudaEvent_t stop)
-{
-    float ms = 0.0f;
-
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        dogma_ultra_kernel<<<grid, block>>>(
-            reinterpret_cast<float4*>(d_c),
-            reinterpret_cast<const float4*>(d_a),
-            reinterpret_cast<const float4*>(d_b),
-            n4);
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-
-    return ms / static_cast<float>(ITERATIONS);
-}
-
-float run_dogma_final(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
-    int n4,
-    dim3 grid,
-    dim3 block,
-    cudaEvent_t start,
-    cudaEvent_t stop)
-{
-    float ms = 0.0f;
-
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        dogma_final_kernel<<<grid, block>>>(
-            reinterpret_cast<float4*>(d_c),
-            reinterpret_cast<const float4*>(d_a),
-            reinterpret_cast<const float4*>(d_b),
-            n4);
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-
-    return ms / static_cast<float>(ITERATIONS);
-}
-
-float run_dogma_ghost(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
-    int n4,
-    dim3 grid,
-    dim3 block,
-    cudaEvent_t start,
-    cudaEvent_t stop)
-{
-    float ms = 0.0f;
-
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        dogma_ghost_kernel<<<grid, block>>>(
-            reinterpret_cast<float4*>(d_c),
-            reinterpret_cast<const float4*>(d_a),
-            reinterpret_cast<const float4*>(d_b),
-            n4);
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-
-    return ms / static_cast<float>(ITERATIONS);
-}
-
-float run_dogma_apex(
-    value_t* d_c,
-    const value_t* d_a,
-    const value_t* d_b,
-    int n4,
-    dim3 grid,
-    dim3 block,
-    cudaEvent_t start,
-    cudaEvent_t stop)
-{
-    float ms = 0.0f;
-
-    CUDA_CHECK(cudaEventRecord(start));
-    for (int i = 0; i < ITERATIONS; ++i) {
-        dogma_apex_kernel<<<grid, block>>>(
-            reinterpret_cast<float4*>(d_c),
-            reinterpret_cast<const float4*>(d_a),
-            reinterpret_cast<const float4*>(d_b),
-            n4);
-    }
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
-
-    return ms / static_cast<float>(ITERATIONS);
+    return ms / static_cast<float>(ITERAZIONI);
 }
 
 int main()
 {
     static_assert(N % 4 == 0, "N must be divisible by 4 for float4 vectorization.");
-    static_assert((N / 4) % 2 == 0, "N/4 must be even for dogma_final_kernel.");
 
-    const int n = N;
+    const size_t dimensioni = static_cast<size_t>(N) * sizeof(carro);
     const int n4 = N / 4;
-    const size_t bytes = static_cast<size_t>(n) * sizeof(value_t);
 
     // ============================================================
-    // HOST MEMORY
+    // MEMORIA HOST
     // ============================================================
-    value_t* h_a = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_b = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_baseline = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_vectorized = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_shared = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_dogma_ultra = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_dogma_final = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_dogma_ghost = static_cast<value_t*>(std::malloc(bytes));
-    value_t* h_c_dogma_apex = static_cast<value_t*>(std::malloc(bytes));
+    carro* h_A = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_B = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_C_baseline = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_C_vectorized = static_cast<carro*>(std::malloc(dimensioni));
+    carro* h_C_shared = static_cast<carro*>(std::malloc(dimensioni));
 
-    if (!h_a || !h_b || !h_c_baseline || !h_c_vectorized || !h_c_shared ||
-        !h_c_dogma_ultra || !h_c_dogma_final || !h_c_dogma_ghost || !h_c_dogma_apex) {
+    if (!h_A || !h_B || !h_C_baseline || !h_C_vectorized || !h_C_shared) {
         std::cerr << "Host memory allocation failed." << std::endl;
         return EXIT_FAILURE;
     }
 
-    for (int i = 0; i < n; ++i) {
-        h_a[i] = 1.0f;
-        h_b[i] = 2.0f;
+    for (int i = 0; i < N; ++i) {
+        h_A[i] = 1.0f;
+        h_B[i] = 2.0f;
     }
 
     // ============================================================
-    // DEVICE MEMORY
+    // MEMORIA DEVICE
     // ============================================================
-    value_t *d_a, *d_b;
-    value_t *d_c_baseline, *d_c_vectorized, *d_c_shared;
-    value_t *d_c_dogma_ultra, *d_c_dogma_final, *d_c_dogma_ghost, *d_c_dogma_apex;
+    carro *d_A, *d_B, *d_C_baseline, *d_C_vectorized, *d_C_shared;
 
-    CUDA_CHECK(cudaMalloc(&d_a, bytes));
-    CUDA_CHECK(cudaMalloc(&d_b, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_baseline, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_vectorized, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_shared, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_dogma_ultra, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_dogma_final, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_dogma_ghost, bytes));
-    CUDA_CHECK(cudaMalloc(&d_c_dogma_apex, bytes));
+    CUDA_CHECK(cudaMalloc(&d_A, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_B, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_C_baseline, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_C_vectorized, dimensioni));
+    CUDA_CHECK(cudaMalloc(&d_C_shared, dimensioni));
 
-    CUDA_CHECK(cudaMemcpy(d_a, h_a, bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_b, h_b, bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_A, h_A, dimensioni, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_B, h_B, dimensioni, cudaMemcpyHostToDevice));
 
     // ============================================================
-    // DEVICE INFO
+    // CONFIGURAZIONE BASE
     // ============================================================
-    int num_sms = 0;
-    CUDA_CHECK(cudaDeviceGetAttribute(&num_sms, cudaDevAttrMultiProcessorCount, 0));
-
-    dim3 default_block(BLOCK_SIZE);
-    dim3 default_grid((n + BLOCK_SIZE - 1) / BLOCK_SIZE);
-    dim3 default_grid_vec((n4 + BLOCK_SIZE - 1) / BLOCK_SIZE);
-
-    dim3 dogma_grid(num_sms * 32);
-    dim3 dogma_block(BLOCK_SIZE);
-
-    dim3 ghost_grid(num_sms * 16);
-    dim3 ghost_block(128);
-
-    dim3 apex_grid(num_sms * 32);
-    dim3 apex_block(128);
+    dim3 blocco(BLOCK_SIZE);
+    dim3 griglia((N + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    dim3 griglia_vectorized((n4 + BLOCK_SIZE - 1) / BLOCK_SIZE);
 
     // ============================================================
-    // EVENTS
+    // EVENTI CUDA
     // ============================================================
     cudaEvent_t start, stop;
     CUDA_CHECK(cudaEventCreate(&start));
@@ -557,126 +277,57 @@ int main()
     // ============================================================
     // WARMUP
     // ============================================================
-    baseline_kernel<<<default_grid, default_block>>>(d_c_baseline, d_a, d_b, n);
+    baseline_kernel<<<griglia, blocco>>>(d_C_baseline, d_A, d_B, N);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    vectorized_kernel<<<default_grid_vec, default_block>>>(
-        reinterpret_cast<float4*>(d_c_vectorized),
-        reinterpret_cast<const float4*>(d_a),
-        reinterpret_cast<const float4*>(d_b),
-        n4);
+    vectorized_kernel<<<griglia_vectorized, blocco>>>(
+        reinterpret_cast<float4*>(d_C_vectorized),
+        reinterpret_cast<const float4*>(d_A),
+        reinterpret_cast<const float4*>(d_B),
+        n4
+    );
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    shared_memory_kernel<<<default_grid, default_block>>>(d_c_shared, d_a, d_b, n);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    dogma_ultra_kernel<<<dogma_grid, dogma_block>>>(
-        reinterpret_cast<float4*>(d_c_dogma_ultra),
-        reinterpret_cast<const float4*>(d_a),
-        reinterpret_cast<const float4*>(d_b),
-        n4);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    dogma_final_kernel<<<dogma_grid, dogma_block>>>(
-        reinterpret_cast<float4*>(d_c_dogma_final),
-        reinterpret_cast<const float4*>(d_a),
-        reinterpret_cast<const float4*>(d_b),
-        n4);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    dogma_ghost_kernel<<<ghost_grid, ghost_block>>>(
-        reinterpret_cast<float4*>(d_c_dogma_ghost),
-        reinterpret_cast<const float4*>(d_a),
-        reinterpret_cast<const float4*>(d_b),
-        n4);
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
-
-    dogma_apex_kernel<<<apex_grid, apex_block>>>(
-        reinterpret_cast<float4*>(d_c_dogma_apex),
-        reinterpret_cast<const float4*>(d_a),
-        reinterpret_cast<const float4*>(d_b),
-        n4);
+    shared_memory_kernel<<<griglia, blocco>>>(d_C_shared, d_A, d_B, N);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // ============================================================
-    // TIMING
+    // TEST PRINCIPALI
     // ============================================================
-    const float baseline_ms = run_baseline(
-        d_c_baseline, d_a, d_b, n,
-        default_grid, default_block, start, stop);
+    const float baseline_ms =
+        esegui_baseline(d_C_baseline, d_A, d_B, N, griglia, blocco, start, stop);
 
-    const float vectorized_ms = run_vectorized(
-        d_c_vectorized, d_a, d_b, n4,
-        default_grid_vec, default_block, start, stop);
+    const float vectorized_ms =
+        esegui_vectorized(d_C_vectorized, d_A, d_B, n4, griglia_vectorized, blocco, start, stop);
 
-    const float shared_ms = run_shared(
-        d_c_shared, d_a, d_b, n,
-        default_grid, default_block, start, stop);
-
-    const float dogma_ultra_ms = run_dogma_ultra(
-        d_c_dogma_ultra, d_a, d_b, n4,
-        dogma_grid, dogma_block, start, stop);
-
-    const float dogma_final_ms = run_dogma_final(
-        d_c_dogma_final, d_a, d_b, n4,
-        dogma_grid, dogma_block, start, stop);
-
-    const float dogma_ghost_ms = run_dogma_ghost(
-        d_c_dogma_ghost, d_a, d_b, n4,
-        ghost_grid, ghost_block, start, stop);
-
-    const float dogma_apex_ms = run_dogma_apex(
-        d_c_dogma_apex, d_a, d_b, n4,
-        apex_grid, apex_block, start, stop);
+    const float shared_ms =
+        esegui_shared(d_C_shared, d_A, d_B, N, griglia, blocco, start, stop);
 
     CUDA_CHECK(cudaDeviceSynchronize());
 
     // ============================================================
-    // COPY RESULTS BACK
+    // COPIA RISULTATI SU HOST
     // ============================================================
-    CUDA_CHECK(cudaMemcpy(h_c_baseline, d_c_baseline, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_vectorized, d_c_vectorized, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_shared, d_c_shared, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_dogma_ultra, d_c_dogma_ultra, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_dogma_final, d_c_dogma_final, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_dogma_ghost, d_c_dogma_ghost, bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_c_dogma_apex, d_c_dogma_apex, bytes, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C_baseline, d_C_baseline, dimensioni, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C_vectorized, d_C_vectorized, dimensioni, cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaMemcpy(h_C_shared, d_C_shared, dimensioni, cudaMemcpyDeviceToHost));
 
     // ============================================================
-    // VALIDATION
+    // VALIDAZIONE
     // ============================================================
     const bool valid_vectorized =
-        validate_arrays(h_c_baseline, h_c_vectorized, n, "Vectorized");
+        valida_array(h_C_baseline, h_C_vectorized, N, "Vectorized");
 
     const bool valid_shared =
-        validate_arrays(h_c_baseline, h_c_shared, n, "Shared");
+        valida_array(h_C_baseline, h_C_shared, N, "Shared");
 
-    const bool valid_dogma_ultra =
-        validate_arrays(h_c_baseline, h_c_dogma_ultra, n, "Dogma Ultra");
-
-    const bool valid_dogma_final =
-        validate_arrays(h_c_baseline, h_c_dogma_final, n, "Dogma Final");
-
-    const bool valid_dogma_ghost =
-        validate_arrays(h_c_baseline, h_c_dogma_ghost, n, "Dogma Ghost");
-
-    const bool valid_dogma_apex =
-        validate_arrays(h_c_baseline, h_c_dogma_apex, n, "Dogma Apex");
-
-    const bool all_valid =
-        valid_vectorized && valid_shared &&
-        valid_dogma_ultra && valid_dogma_final &&
-        valid_dogma_ghost && valid_dogma_apex;
+    const bool validazione_completa = valid_vectorized && valid_shared;
 
     // ============================================================
-    // METRICS
+    // METRICHE
     // ============================================================
     const float speedup_vectorized =
         (vectorized_ms > 0.0f) ? (baseline_ms / vectorized_ms) : 0.0f;
@@ -684,152 +335,121 @@ int main()
     const float speedup_shared =
         (shared_ms > 0.0f) ? (baseline_ms / shared_ms) : 0.0f;
 
-    const float speedup_dogma_ultra =
-        (dogma_ultra_ms > 0.0f) ? (baseline_ms / dogma_ultra_ms) : 0.0f;
-
-    const float speedup_dogma_final =
-        (dogma_final_ms > 0.0f) ? (baseline_ms / dogma_final_ms) : 0.0f;
-
-    const float speedup_dogma_ghost =
-        (dogma_ghost_ms > 0.0f) ? (baseline_ms / dogma_ghost_ms) : 0.0f;
-
-    const float speedup_dogma_apex =
-        (dogma_apex_ms > 0.0f) ? (baseline_ms / dogma_apex_ms) : 0.0f;
-
     const float improvement_vectorized =
-        (baseline_ms > 0.0f) ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f : 0.0f;
+        (baseline_ms > 0.0f)
+            ? ((baseline_ms - vectorized_ms) / baseline_ms) * 100.0f
+            : 0.0f;
 
     const float improvement_shared =
-        (baseline_ms > 0.0f) ? ((baseline_ms - shared_ms) / baseline_ms) * 100.0f : 0.0f;
+        (baseline_ms > 0.0f)
+            ? ((baseline_ms - shared_ms) / baseline_ms) * 100.0f
+            : 0.0f;
 
-    const float improvement_dogma_ultra =
-        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_ultra_ms) / baseline_ms) * 100.0f : 0.0f;
-
-    const float improvement_dogma_final =
-        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_final_ms) / baseline_ms) * 100.0f : 0.0f;
-
-    const float improvement_dogma_ghost =
-        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_ghost_ms) / baseline_ms) * 100.0f : 0.0f;
-
-    const float improvement_dogma_apex =
-        (baseline_ms > 0.0f) ? ((baseline_ms - dogma_apex_ms) / baseline_ms) * 100.0f : 0.0f;
+    const size_t bytes_processed = static_cast<size_t>(N) * sizeof(carro);
 
     const float bandwidth_vectorized =
-        (vectorized_ms > 0.0f) ? (bytes / (vectorized_ms / 1000.0f)) / 1e9f : 0.0f;
+        (vectorized_ms > 0.0f)
+            ? (bytes_processed / (vectorized_ms / 1000.0f)) / 1e9f
+            : 0.0f;
 
     const float bandwidth_shared =
-        (shared_ms > 0.0f) ? (bytes / (shared_ms / 1000.0f)) / 1e9f : 0.0f;
+        (shared_ms > 0.0f)
+            ? (bytes_processed / (shared_ms / 1000.0f)) / 1e9f
+            : 0.0f;
 
-    const float bandwidth_dogma_ultra =
-        (dogma_ultra_ms > 0.0f) ? (bytes / (dogma_ultra_ms / 1000.0f)) / 1e9f : 0.0f;
+    // ============================================================
+    // TUNING BLOCK SIZE SUL KERNEL VETTORIALIZZATO
+    // ============================================================
+    const int block_sizes[] = {64, 128, 256, 512};
 
-    const float bandwidth_dogma_final =
-        (dogma_final_ms > 0.0f) ? (bytes / (dogma_final_ms / 1000.0f)) / 1e9f : 0.0f;
+    float best_vectorized_time = std::numeric_limits<float>::max();
+    int best_vectorized_block = -1;
 
-    const float bandwidth_dogma_ghost =
-        (dogma_ghost_ms > 0.0f) ? (bytes / (dogma_ghost_ms / 1000.0f)) / 1e9f : 0.0f;
+    std::cout << std::fixed << std::setprecision(5);
 
-    const float bandwidth_dogma_apex =
-        (dogma_apex_ms > 0.0f) ? (bytes / (dogma_apex_ms / 1000.0f)) / 1e9f : 0.0f;
+    for (int bs : block_sizes) {
+        dim3 tuning_blocco(bs);
+        dim3 tuning_griglia((n4 + bs - 1) / bs);
+
+        const float time_ms =
+            esegui_vectorized(
+                d_C_vectorized,
+                d_A,
+                d_B,
+                n4,
+                tuning_griglia,
+                tuning_blocco,
+                start,
+                stop);
+
+        if (time_ms < best_vectorized_time) {
+            best_vectorized_time = time_ms;
+            best_vectorized_block = bs;
+        }
+    }
 
     // ============================================================
     // OUTPUT
     // ============================================================
-    std::cout << std::fixed << std::setprecision(5);
-
     std::cout << "=== GPU Kernel Comparison ===\n\n";
 
-    std::cout << "Validation: " << (all_valid ? "PASSED" : "FAILED") << "\n";
-    std::cout << "Iterations: " << ITERATIONS << "\n";
-    std::cout << "Elements processed: " << n << "\n";
-    std::cout << "Bytes processed: " << bytes << "\n";
-    std::cout << "SM count: " << num_sms << "\n\n";
+    std::cout << "Validation: " << (validazione_completa ? "PASSED" : "FAILED") << "\n";
+    std::cout << "Iterations: " << ITERAZIONI << "\n";
+    std::cout << "Elements processed: " << N << "\n";
+    std::cout << "Bytes processed: " << bytes_processed << "\n\n";
 
     std::cout << "Baseline Time: " << baseline_ms << " ms\n";
     std::cout << "Vectorized Kernel Time: " << vectorized_ms << " ms\n";
-    std::cout << "Shared Memory Kernel Time: " << shared_ms << " ms\n";
-    std::cout << "Dogma Ultra Kernel Time: " << dogma_ultra_ms << " ms\n";
-    std::cout << "Dogma Final Kernel Time: " << dogma_final_ms << " ms\n";
-    std::cout << "Dogma Ghost Kernel Time: " << dogma_ghost_ms << " ms\n";
-    std::cout << "Dogma Apex Kernel Time: " << dogma_apex_ms << " ms\n\n";
+    std::cout << "Shared Memory Kernel Time: " << shared_ms << " ms\n\n";
 
     std::cout << "Vectorized Speedup: " << speedup_vectorized << "x\n";
-    std::cout << "Shared Memory Speedup: " << speedup_shared << "x\n";
-    std::cout << "Dogma Ultra Speedup: " << speedup_dogma_ultra << "x\n";
-    std::cout << "Dogma Final Speedup: " << speedup_dogma_final << "x\n";
-    std::cout << "Dogma Ghost Speedup: " << speedup_dogma_ghost << "x\n";
-    std::cout << "Dogma Apex Speedup: " << speedup_dogma_apex << "x\n\n";
+    std::cout << "Shared Memory Speedup: " << speedup_shared << "x\n\n";
 
     std::cout << "Vectorized Improvement: " << improvement_vectorized << "%\n";
-    std::cout << "Shared Memory Improvement: " << improvement_shared << "%\n";
-    std::cout << "Dogma Ultra Improvement: " << improvement_dogma_ultra << "%\n";
-    std::cout << "Dogma Final Improvement: " << improvement_dogma_final << "%\n";
-    std::cout << "Dogma Ghost Improvement: " << improvement_dogma_ghost << "%\n";
-    std::cout << "Dogma Apex Improvement: " << improvement_dogma_apex << "%\n\n";
+    std::cout << "Shared Memory Improvement: " << improvement_shared << "%\n\n";
 
     std::cout << "Approx. Vectorized Bandwidth: " << bandwidth_vectorized << " GB/s\n";
-    std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n";
-    std::cout << "Approx. Dogma Ultra Bandwidth: " << bandwidth_dogma_ultra << " GB/s\n";
-    std::cout << "Approx. Dogma Final Bandwidth: " << bandwidth_dogma_final << " GB/s\n";
-    std::cout << "Approx. Dogma Ghost Bandwidth: " << bandwidth_dogma_ghost << " GB/s\n";
-    std::cout << "Approx. Dogma Apex Bandwidth: " << bandwidth_dogma_apex << " GB/s\n";
+    std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n\n";
 
-    // ============================================================
-    // BLOCK SIZE TUNING FOR DOGMA APEX
-    // ============================================================
-    std::cout << "\n=== Dogma Apex Block Size Tuning ===\n";
+    std::cout << "=== Vectorized Block Size Tuning ===\n";
+    for (int bs : block_sizes) {
+        dim3 tuning_blocco(bs);
+        dim3 tuning_griglia((n4 + bs - 1) / bs);
 
-    const std::vector<int> apex_block_sizes = {64, 128, 256, 512};
-
-    for (int bs : apex_block_sizes) {
-        dim3 tuning_block(bs);
-        dim3 tuning_grid(num_sms * 32);
-
-        float time_ms = 0.0f;
-
-        CUDA_CHECK(cudaEventRecord(start));
-        for (int i = 0; i < ITERATIONS; ++i) {
-            dogma_apex_kernel<<<tuning_grid, tuning_block>>>(
-                reinterpret_cast<float4*>(d_c_dogma_apex),
-                reinterpret_cast<const float4*>(d_a),
-                reinterpret_cast<const float4*>(d_b),
-                n4);
-        }
-        CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaEventRecord(stop));
-        CUDA_CHECK(cudaEventSynchronize(stop));
-        CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
-
-        time_ms /= static_cast<float>(ITERATIONS);
+        const float time_ms =
+            esegui_vectorized(
+                d_C_vectorized,
+                d_A,
+                d_B,
+                n4,
+                tuning_griglia,
+                tuning_blocco,
+                start,
+                stop);
 
         std::cout << "Block Size " << bs << " -> " << time_ms << " ms\n";
     }
 
+    std::cout << "\nBest Vectorized Block Size: " << best_vectorized_block << "\n";
+    std::cout << "Best Vectorized Time: " << best_vectorized_time << " ms\n";
+
     // ============================================================
-    // CLEANUP
+    // PULIZIA
     // ============================================================
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
 
-    CUDA_CHECK(cudaFree(d_a));
-    CUDA_CHECK(cudaFree(d_b));
-    CUDA_CHECK(cudaFree(d_c_baseline));
-    CUDA_CHECK(cudaFree(d_c_vectorized));
-    CUDA_CHECK(cudaFree(d_c_shared));
-    CUDA_CHECK(cudaFree(d_c_dogma_ultra));
-    CUDA_CHECK(cudaFree(d_c_dogma_final));
-    CUDA_CHECK(cudaFree(d_c_dogma_ghost));
-    CUDA_CHECK(cudaFree(d_c_dogma_apex));
+    CUDA_CHECK(cudaFree(d_A));
+    CUDA_CHECK(cudaFree(d_B));
+    CUDA_CHECK(cudaFree(d_C_baseline));
+    CUDA_CHECK(cudaFree(d_C_vectorized));
+    CUDA_CHECK(cudaFree(d_C_shared));
 
-    std::free(h_a);
-    std::free(h_b);
-    std::free(h_c_baseline);
-    std::free(h_c_vectorized);
-    std::free(h_c_shared);
-    std::free(h_c_dogma_ultra);
-    std::free(h_c_dogma_final);
-    std::free(h_c_dogma_ghost);
-    std::free(h_c_dogma_apex);
+    std::free(h_A);
+    std::free(h_B);
+    std::free(h_C_baseline);
+    std::free(h_C_vectorized);
+    std::free(h_C_shared);
 
-    return all_valid ? EXIT_SUCCESS : EXIT_FAILURE;
+    return validazione_completa ? EXIT_SUCCESS : EXIT_FAILURE;
 }
