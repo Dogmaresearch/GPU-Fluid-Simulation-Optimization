@@ -1,170 +1,203 @@
-🚀 GPU Compute Optimization & Memory Access Analysis
+# 📄 License & Usage
 
-Focus: GPU Memory Optimization • Parallel Execution • High-Performance Systems
+Copyright (c) 2026 Dogma Research
 
-This project explores low-level GPU optimization techniques with direct relevance to high-performance computing, AI workloads, and data-intensive systems.
+This project is provided strictly for **educational, research, and demonstration purposes**.
 
-⸻
+### Allowed
+- ✅ Viewing and studying the code  
+- ✅ Non-commercial use  
+- ✅ Modification for personal or educational purposes (with attribution)  
 
-⚠️ License
+### Not Allowed
+- ❌ Commercial use without explicit written permission  
+- ❌ Redistribution without proper attribution  
 
-This repository is intended for research, educational, and demonstration purposes only.
-All rights reserved by the author.
-	•	Commercial use is strictly prohibited without prior written permission
-	•	Modification and redistribution are allowed for non-commercial use with proper attribution
+For commercial inquiries: Dogmaresearch@proton.me  
 
-📩 For commercial inquiries: Dogmaresearch@proton.me
+---
 
-⸻
+# 🚀 GPU Compute Optimization & Memory Access Analysis
 
-🔥 Overview
+### Focus: CUDA • GPU Architecture • Memory Optimization • High-Performance Systems
 
-This project began as a GPU-based fluid simulation in Unity and evolved into a deeper exploration of GPU execution behavior and performance optimization using CUDA.
+This project explores low-level GPU optimization techniques with direct relevance to high-performance computing (HPC), AI workloads, and data-intensive systems.
 
-It focuses on understanding how computation and data movement behave at a low level, and how to optimize them for performance-critical systems.
+---
 
-Key Objectives
-	•	Analyze GPU memory access patterns
-	•	Identify performance bottlenecks
-	•	Optimize kernel execution for memory-bound workloads
-	•	Bridge GPU compute concepts with system-level performance principles
+## 🔍 Overview
 
-⸻
+This project began as a real-time GPU fluid simulation in Unity and evolved into a deeper exploration of GPU execution behavior and performance optimization using CUDA.
 
-💧 From Simulation to Optimization
+The goal is not only to make kernels faster, but to understand:
 
-1. GPU Fluid Simulation (Unity)
+- how data moves across GPU memory  
+- where performance bottlenecks occur  
+- how to optimize computation and memory interaction  
 
-A real-time fluid simulation implemented using compute shaders.
+---
 
-This stage provided:
-	•	Practical exposure to GPU parallel execution
-	•	Visualization of compute workloads
-	•	Insight into data flow across GPU memory
+## 🎯 Key Objectives
 
-⸻
+- Analyze GPU memory access patterns  
+- Identify performance bottlenecks  
+- Optimize kernel execution for memory-bound workloads  
+- Bridge GPU compute concepts with system-level performance principles  
 
-2. CUDA Kernel Optimization
+---
 
-The project transitions into CUDA-based benchmarking and optimization.
+## 🌊 From Simulation to Optimization
 
-Two kernel implementations are compared:
-	•	Baseline kernel
-	•	Optimized kernel using vectorized memory access (float4)
+### 1. GPU Fluid Simulation (Unity)
+- Real-time simulation using compute shaders  
+- Visualization of compute workloads  
+- Initial exposure to GPU parallel execution  
 
-Optimization Focus
-	•	Memory coalescing
-	•	Reduction of global memory transactions
-	•	Improved bandwidth utilization
-	•	Efficient parallel execution
+### 2. CUDA Kernel Optimization
+- Transition to CUDA-based benchmarking  
+- Focus on memory access efficiency  
+- Implementation of optimized GPU kernels  
 
-⸻
+---
 
-📊 Performance Analysis
+## 🚀 Kernel Optimization Evolution
 
-The optimized kernel demonstrates significant improvements in memory-bound scenarios.
+### 1. Baseline Kernel
+- Simple global memory access  
+- No optimization  
+- Reference implementation  
 
-Key Results
-	•	Reduced global memory instructions via vectorized loads
-	•	Improved memory coalescing
-	•	Increased effective bandwidth utilization
-	•	Lower kernel execution latency
+### 2. Vectorized Kernel (float4)
+- Uses `float4` for vectorized memory access  
+- Improved memory coalescing  
+- Reduced global memory transactions  
 
-Example Benchmark Output
-Validation: PASSED
-Iterations: 100
-Elements processed: 16,777,216
-Bytes processed: 67,108,864
+### 3. Shared Memory Kernel *(extensible)*
+- Uses on-chip shared memory  
+- Reduces global memory pressure  
+- Demonstrates memory hierarchy optimization  
 
-Baseline Time: 12.4 ms
-Optimized Kernel Time: 7.1 ms
-Speedup: 1.74x
-Performance Improvement: 42.7%
-Approx. Memory Bandwidth: 9.45 GB/s
-🧠 System-Level Perspective
+---
 
-This project extends beyond kernel optimization to consider system-level performance factors:
-	•	Global memory access efficiency
+## 📊 Performance Analysis
+
+### Benchmark Metrics
+- Execution time (ms)  
+- Speedup vs baseline  
+- Memory bandwidth (GB/s)  
+
+### Example Results
+
+- Baseline: **12.4 ms**  
+- Optimized: **7.1 ms**  
+- Speedup: **~1.74x**  
+- Performance Improvement: **~42%**  
+- Estimated Memory Bandwidth: **~9.45 GB/s**  
+
+### Observations
+
+- Reduced global memory instructions via vectorized loads  
+- Improved memory coalescing  
+- Lower kernel execution latency  
+
+---
+
+## 🧠 GPU Optimization Concepts Demonstrated
+
+- Memory coalescing  
+- Vectorized memory access (`float4`)  
+- Global vs shared memory trade-offs  
+- Kernel benchmarking  
+- Execution latency vs throughput  
+- GPU memory bandwidth optimization  
+
+---
+
+## 🌐 Relevance to Networking Systems
+
+Although centered on GPU compute, the same performance principles apply to high-throughput networking systems.
+
+### Key Connections
+
+- Memory efficiency → packet processing performance  
+- Bandwidth optimization → large-scale data transfer  
+- Latency reduction → real-time systems  
+
+---
+
+## ⚙️ Automation & CI Pipeline
+
+The project integrates automated validation workflows using GitHub Actions.
+
+### Automated Steps
+- CUDA benchmark execution  
+- Output validation  
+- Networking tests  
+- Socket inspection  
+- Throughput measurement (iperf3)  
+
+---
+
+## 🛠 Tech Stack
+
+- CUDA C++  
+- NVIDIA GPU Architecture  
+- Python (automation & validation)  
+- Bash scripting  
+- Unity (compute shaders)  
+- GitHub Actions (CI/CD)  
+- Linux networking tools (`ss`, `iperf3`)  
+
+---
+
+## ▶️ How to Run
+
+### Requirements
+- NVIDIA GPU  
+- CUDA Toolkit (11.x or newer)  
+
+### Compile
+
+```bash
+nvcc CUDA-Benchmark/benchmark.cu -o benchmark
+```
+Run Manually
+
+```bash
+./benchmark
+```
+Run automated benchmark
+
+```bash
+python3 scripts/run_benchmark.py
+```
+---
+
+📈 System-Level Perspective
+
+This project extends beyond kernel optimization to consider:
 	•	Host ↔ Device data movement
 	•	Kernel configuration scalability
+	•	Memory-bound vs compute-bound behavior
 	•	Execution latency vs throughput trade-offs
 
-These are critical considerations in:
+Relevant in:
 	•	HPC systems
 	•	AI workloads
 	•	Distributed computing environments
 
 ⸻
 
-🌐 Relevance to Networking Systems
-
-Although centered on GPU compute, the same performance principles apply to high-throughput networking systems.
-
-Key Connections
-	•	Memory efficiency → packet processing performance
-	•	Latency reduction → real-time systems
-	•	Bandwidth optimization → large-scale data transfer
-
-This project includes basic networking validation workflows and performance checks:
-	•	Socket inspection (ss)
-	•	Network output validation
-	•	Throughput testing (iperf3)
-	•	Automated CI validation (GitHub Actions)
-
-	This project includes automated validation of networking behavior using Linux tools such as iperf3 and socket inspection, simulating performance testing scenarios relevant to datacenter environments.
-
-📄 See: docs/networking-notes.md
-
-⸻
-
-⚙️ Automation & CI Pipeline
-
-The project integrates automated validation workflows using GitHub Actions:
-	•	Python and Bash script validation
-	•	Benchmark verification
-	•	Network test execution
-	•	Output validation checks
-
-Example automated steps:
-	•	Run CUDA benchmark
-	•	Validate outputs
-	•	Run network tests
-	•	Inspect sockets
-	•	Measure throughput (iperf)
-
-⸻
-
-🛠 Tech Stack
-	•	CUDA C++
-	•	NVIDIA GPU Architecture
-	•	Python (automation & validation)
-	•	Bash scripting
-	•	Unity (compute shaders)
-	•	GitHub Actions (CI/CD)
-	•	Linux networking tools (ss, iperf3)
-
-
-⸻
-
-🚀 How to Run
-
-Requirements
-	•	NVIDIA GPU
-	•	CUDA Toolkit (11.x or newer)
-
-  COMPILE
-
-  nvcc CUDA-Benchmark/benchmark.cu -o benchmark
-
-  Run manually
-
-  ./benchmark
-
-  Run automated benchmark
-
-  python3 scripts/run_benchmark.py
-
-  📌 Notes
+📌 Notes
 	•	Results may vary depending on hardware
-	•	Benchmarks were executed under controlled conditions
+	•	Benchmarks executed under controlled conditions
 	•	Improvements are most significant for memory-bound workloads
+
+⸻
+
+👤 Author
+
+Dogma Research
+GPU Computing • CUDA • High-Performance Systems
+
+📩 Contact: Dogmaresearch@proton.me
