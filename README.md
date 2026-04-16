@@ -1,284 +1,233 @@
-# 📄 License & Usage
+# 📜 License, Usage and Intellectual Property
 
-Copyright (c) 2026 Dogma Research
+**Copyright (c) 2026 Dogma Research. All rights reserved.**
 
-This project is provided strictly for **educational, research, and demonstration purposes**.
+This repository and all its contents — including source code, structure, optimization logic, benchmarking methodology, and documentation — are the exclusive intellectual property of:
 
-### Allowed
-- ✅ Viewing and studying the code  
-- ✅ Non-commercial use  
-- ✅ Modification for personal or educational purposes (with attribution)  
-
-### Not Allowed
-- ❌ Commercial use without explicit written permission  
-- ❌ Redistribution without proper attribution  
-
-For commercial inquiries: Dogmaresearch@proton.me  
+> **Dogma Research**
 
 ---
 
-# 🚀 GPU Compute Optimization & Memory Access Analysis
+## 🔒 Ownership
 
-### Focus: CUDA • GPU Architecture • Memory Optimization • High-Performance Systems
+This project is protected under international copyright and intellectual property laws.
 
-This project explores low-level GPU optimization techniques with direct relevance to high-performance computing (HPC), AI workloads, and data-intensive systems.
+The following elements are explicitly considered protected:
 
----
-
-## 🔍 Overview
-
-This project began as a real-time GPU fluid simulation in Unity and evolved into a deeper exploration of GPU execution behavior and performance optimization using CUDA.
-
-The goal is not only to make kernels faster, but to understand:
-
-- how data moves across GPU memory  
-- where performance bottlenecks occur  
-- how to optimize computation and memory interaction  
+- Source code and kernel implementations
+- Optimization strategies and approaches
+- Benchmark design and methodology
+- Performance analysis and conclusions
+- Documentation and technical explanations
 
 ---
 
-## 🎯 Key Objectives
+## ✅ Permitted Use
 
-- Analyze GPU memory access patterns  
-- Identify performance bottlenecks  
-- Optimize kernel execution for memory-bound workloads  
-- Bridge GPU compute concepts with system-level performance principles  
+You are allowed to:
 
----
-
-## 🌊 From Simulation to Optimization
-
-### 1. GPU Fluid Simulation (Unity)
-- Real-time simulation using compute shaders  
-- Visualization of compute workloads  
-- Initial exposure to GPU parallel execution  
-
-### 2. CUDA Kernel Optimization
-- Transition to CUDA-based benchmarking  
-- Focus on memory access efficiency  
-- Implementation of optimized GPU kernels  
+- View and study the project for **educational purposes**
+- Use the code for **personal research and experimentation**
+- Reference this work in academic or technical contexts **with proper attribution**
+- Modify the code **privately** for learning purposes
 
 ---
 
-## 🚀 Kernel Optimization Evolution
+## ❌ Prohibited Use
+
+You are NOT allowed to:
+
+- Use this project (in whole or in part) for **commercial purposes**
+- Integrate the code or techniques into **paid or proprietary systems**
+- Redistribute, resell, or sublicense the project
+- Claim authorship or remove attribution
+- Publish modified versions without clearly crediting the original author
+- Extract or reuse optimization techniques in commercial environments without permission
+
+---
+
+## ⚖️ Commercial Licensing
+
+For any commercial use, licensing, or collaboration:
+
+📩 **Contact:** Dogmaresearch@proton.me  
+
+No commercial rights are granted without **explicit written authorization**.
+
+---
+
+## 🧠 Intellectual Property Notice
+
+This project includes not only code, but also:
+
+- original optimization workflows
+- GPU performance reasoning
+- memory-bound analysis methodology
+
+These elements are part of the intellectual contribution of **Dogma Research**.
+
+Unauthorized reuse in commercial or closed-source systems is strictly prohibited.
+
+---
+
+# 🚀 GPU Fluid Simulation Optimization
+
+## Overview
+
+This project explores **low-level CUDA optimization techniques** with a strong focus on:
+
+- memory-bound GPU workloads
+- memory access efficiency
+- execution throughput vs latency
+- real benchmarking instead of theoretical assumptions
+
+It originated from a GPU fluid simulation and evolved into a structured **performance analysis framework**.
+
+---
+
+## 🎯 Objectives
+
+- Understand how data moves through GPU memory
+- Identify real bottlenecks (not assumed ones)
+- Compare optimization techniques empirically
+- Measure actual gains through benchmarking
+- Align kernel design with GPU architecture behavior
+
+---
+
+## ⚙️ Optimization Path
 
 ### 1. Baseline Kernel
-- Simple global memory access  
-- No optimization  
-- Reference implementation  
-
-### 2. Vectorized Kernel (float4)
-- Uses `float4` for vectorized memory access  
-- Improved memory coalescing  
-- Reduced global memory transactions  
-
-### 3. Shared Memory Kernel *(extensible)*
-- Uses on-chip shared memory  
-- Reduces global memory pressure  
-- Demonstrates memory hierarchy optimization  
+- Scalar memory access (`float`)
+- No optimization
+- Reference implementation
 
 ---
 
-## 📊 Performance Analysis
+### 2. Vectorized Kernel (`float4`)
+**Core optimization of the project**
 
-### Benchmark Metrics
-- Execution time (ms)  
-- Speedup vs baseline  
-- Memory bandwidth (GB/s)  
+- Uses 128-bit memory transactions
+- Reduces memory instruction count
+- Improves coalescing
+- Increases effective bandwidth
 
-### Example Results
-
-- Baseline: **12.4 ms**  
-- Optimized: **7.1 ms**  
-- Speedup: **~1.74x**  
-- Performance Improvement: **~42%**  
-- Estimated Memory Bandwidth: **~9.45 GB/s**  
-
-### Observations
-
-- Reduced global memory instructions via vectorized loads  
-- Improved memory coalescing  
-- Lower kernel execution latency  
+👉 This is the **best performing solution overall**
 
 ---
 
----
+### 3. Shared Memory Kernel
+- Uses on-chip shared memory
+- Intended to reduce global memory pressure
 
-## 🧠 Why This Optimization Works (Deep GPU Analysis)
-
-The performance improvement observed in the optimized kernel is primarily driven by better utilization of the GPU memory subsystem and improved execution efficiency.
-
-### Memory Coalescing
-
-In the baseline kernel, each thread performs scalar memory accesses, which can lead to inefficient global memory transactions.
-
-The optimized kernel uses `float4` vectorized loads:
-
-- Reduces the number of memory transactions  
-- Improves alignment with memory bus width  
-- Enables better coalescing across threads in a warp  
-
-👉 Result: higher effective memory bandwidth
+**Result:**
+- Limited gains for this workload
+- Demonstrates that shared memory is not always beneficial
 
 ---
 
-### Reduced Global Memory Pressure
+## 🧪 Benchmark Methodology
 
-Vectorized access reduces:
+Each kernel is tested with:
 
-- number of load/store instructions  
-- pressure on global memory subsystem  
+- 500 iterations
+- identical input data
+- CUDA events for precise timing
+- result validation vs baseline
 
-👉 This leads to lower latency and better throughput
+### Metrics collected
 
----
-
-### Warp Efficiency
-
-Threads within a warp execute the same instructions:
-
-- Vectorized operations improve uniformity  
-- Reduced divergence  
-- Better scheduling efficiency  
-
-👉 Result: improved warp execution efficiency
+- Execution time (ms)
+- Speedup vs baseline
+- Percentage improvement
+- Estimated memory bandwidth
+- Block size tuning results
 
 ---
 
-### Instruction-Level Efficiency
+## 📊 Best Observed Results (Tesla T4 - Google Colab)
 
-Using `float4`:
+- Elements: 67,108,864  
+- Bytes processed: 268,435,456  
 
-- Fewer instructions per data processed  
-- Higher instruction throughput  
-- Better pipeline utilization  
+### Execution Time
 
----
+- Baseline: **3.38747 ms**
+- Vectorized: **3.22683 ms**
+- Shared Memory: **3.28297 ms**
 
-### Bottleneck Shift
+### Performance
 
-The baseline kernel is:
+- Vectorized Speedup: **1.04978x**
+- Shared Speedup: **1.03183x**
 
-→ Memory-bound
+- Vectorized Improvement: **+4.74%**
+- Shared Improvement: **+3.08%**
 
-After optimization:
+### Bandwidth
 
-→ Closer to balanced (memory + compute)
-
-This shift allows better exploitation of GPU resources.
-
----
-
-### Key Insight
-
-The optimization does not simply make the kernel faster.
-
-It improves:
-
-- how data is accessed  
-- how memory bandwidth is utilized  
-- how execution aligns with GPU architecture  
-
-👉 This is the core principle behind high-performance CUDA programming.
+- Vectorized: ~**83 GB/s**
+- Shared: ~**81 GB/s**
 
 ---
 
-## 🧠 GPU Optimization Concepts Demonstrated
+## 🧠 Key Insight
 
-- Memory coalescing  
-- Vectorized memory access (`float4`)  
-- Global vs shared memory trade-offs  
-- Kernel benchmarking  
-- Execution latency vs throughput  
-- GPU memory bandwidth optimization  
+This workload is:
 
----
+> ⚠️ **Memory-bound**
 
-## 🌐 Relevance to Networking Systems
+Meaning:
 
-Although centered on GPU compute, the same performance principles apply to high-throughput networking systems.
+- Performance is limited by memory bandwidth
+- Not by compute power
 
-### Key Connections
+### Final conclusion
 
-- Memory efficiency → packet processing performance  
-- Bandwidth optimization → large-scale data transfer  
-- Latency reduction → real-time systems  
+The most effective optimization is:
+
+> ✅ **Vectorized memory access (`float4`)**
+
+More complex kernels do **not outperform** this approach.
 
 ---
 
-## ⚙️ Automation & CI Pipeline
+## ⚙️ Execution (Google Colab)
 
-The project integrates automated validation workflows using GitHub Actions.
-
-### Automated Steps
-- CUDA benchmark execution  
-- Output validation  
-- Networking tests  
-- Socket inspection  
-- Throughput measurement (iperf3)  
-
----
-
-## 🛠 Tech Stack
-
-- CUDA C++  
-- NVIDIA GPU Architecture  
-- Python (automation & validation)  
-- Bash scripting  
-- Unity (compute shaders)  
-- GitHub Actions (CI/CD)  
-- Linux networking tools (`ss`, `iperf3`)  
-
----
-
-## ▶️ How to Run
-
-### Requirements
-- NVIDIA GPU  
-- CUDA Toolkit (11.x or newer)  
-
-### Compile
+### 1. Compile
 
 ```bash
-nvcc CUDA-Benchmark/benchmark.cu -o benchmark
+!nvcc CUDA-Benchmark/benchmark.cu -o benchmark
 ```
-Run Manually
+2.RUN
 
 ```bash
-./benchmark
+!./benchmark
 ```
-Run automated benchmark
 
-```bash
-python3 scripts/run_benchmark.py
-```
----
+Project Structure
 
-📈 System-Level Perspective
+CUDA-Benchmark/
+ ├── benchmark.cu
+ └── scripts/
+     └── run_benchmark.py
 
-This project extends beyond kernel optimization to consider:
-	•	Host ↔ Device data movement
-	•	Kernel configuration scalability
-	•	Memory-bound vs compute-bound behavior
-	•	Execution latency vs throughput trade-offs
 
-Relevant in:
-	•	HPC systems
-	•	AI workloads
-	•	Distributed computing environments
+🧪 Notes
+•	Results may vary slightly due to GPU load variability (Colab environment)
+•	Benchmarks are run under controlled repeated conditions
+
+•	Improvements are more visible in memory-bound workloads
 
 ⸻
 
-📌 Notes
-	•	Results may vary depending on hardware
-	•	Benchmarks executed under controlled conditions
-	•	Improvements are most significant for memory-bound workloads
-
-⸻
-
-👤 Author
+👨‍💻 Author
 
 Dogma Research
-GPU Computing • CUDA • High-Performance Systems
+
+Focus:
+	•	GPU Computing
+	•	CUDA Optimization
+	•	High Performance Systems
 
 📩 Contact: Dogmaresearch@proton.me
