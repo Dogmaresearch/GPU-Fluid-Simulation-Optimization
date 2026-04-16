@@ -53,10 +53,18 @@ __global__ void vectorized_kernel(
         float4 b = B[idx];
         float4 r;
 
-        r.x = a.x * b.x + 0.5f;
-        r.y = a.y * b.y + 0.5f;
-        r.z = a.z * b.z + 0.5f;
-        r.w = a.w * b.w + 0.5f;
+       float4 r;
+r.x = 0.0f;
+r.y = 0.0f;
+r.z = 0.0f;
+r.w = 0.0f;
+
+for (int k = 0; k < 100; k++) {
+    r.x += a.x * b.x;
+    r.y += a.y * b.y;
+    r.z += a.z * b.z;
+    r.w += a.w * b.w;
+}
 
         C[idx] = r;
     }
@@ -85,7 +93,13 @@ __global__ void shared_memory_kernel(
     __syncthreads();
 
     if (idx < n) {
-        C[idx] = sA[tid] * sB[tid] + 0.5f;
+       float val = 0.0f;
+
+for (int k = 0; k < 100; k++) {
+    val += sA[tid] * sB[tid];
+}
+
+C[idx] = val;
     }
 }
 
