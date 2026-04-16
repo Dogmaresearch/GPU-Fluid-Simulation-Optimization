@@ -310,5 +310,36 @@ int main()
     std::free(h_C_vectorized);
     std::free(h_C_shared);
 
+// ============================================================
+// BLOCK SIZE TUNING
+// ============================================================
+
+std::cout << "\n=== Block Size Tuning ===\n";
+
+int block_sizes[] = {64, 128, 256, 512};
+
+for (int bs : block_sizes) {
+
+    dim3 blocco(bs);
+    dim3 griglia((N + bs - 1) / bs);
+
+    float time_ms = 0.0f;
+
+    CUDA_CHECK(cudaEventRecord(start));
+
+    for (int i = 0; i < ITERAZIONI; ++i) {
+        baseline_kernel<<<griglia, blocco>>>(d_C_baseline, d_A, d_B, N);
+    }
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaEventRecord(stop));
+    CUDA_CHECK(cudaEventSynchronize(stop));
+    CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
+
+    time_ms /= ITERAZIONI;
+
+    std::cout << "Block Size " << bs << " -> " << time_ms << " ms\n";
+}
+
     return validazione_completa ? EXIT_SUCCESS : EXIT_FAILURE;
 }
