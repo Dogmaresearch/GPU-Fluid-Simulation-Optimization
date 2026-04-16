@@ -27,18 +27,18 @@ __global__ void baseline_kernel(carro* C, const carro* A, const carro* B, int n)
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < n) {
-        float val = 0.0f;
+        carro val = 0.0f;
 
-for (int k = 0; k < 100; k++) {
-    val += A[idx] * B[idx];
-}
+        for (int k = 0; k < 100; ++k) {
+            val += A[idx] * B[idx];
+        }
 
-C[idx] = val;
+        C[idx] = val;
     }
 }
 
 // ============================================================
-// KERNEL OTTIMIZZATO VETTORIALIZZATO (float4)
+// KERNEL VETTORIALIZZATO (float4)
 // ============================================================
 __global__ void vectorized_kernel(
     float4* __restrict__ C,
@@ -53,18 +53,17 @@ __global__ void vectorized_kernel(
         float4 b = B[idx];
         float4 r;
 
-       float4 r;
-r.x = 0.0f;
-r.y = 0.0f;
-r.z = 0.0f;
-r.w = 0.0f;
+        r.x = 0.0f;
+        r.y = 0.0f;
+        r.z = 0.0f;
+        r.w = 0.0f;
 
-for (int k = 0; k < 100; k++) {
-    r.x += a.x * b.x;
-    r.y += a.y * b.y;
-    r.z += a.z * b.z;
-    r.w += a.w * b.w;
-}
+        for (int k = 0; k < 100; ++k) {
+            r.x += a.x * b.x;
+            r.y += a.y * b.y;
+            r.z += a.z * b.z;
+            r.w += a.w * b.w;
+        }
 
         C[idx] = r;
     }
@@ -93,13 +92,13 @@ __global__ void shared_memory_kernel(
     __syncthreads();
 
     if (idx < n) {
-       float val = 0.0f;
+        carro val = 0.0f;
 
-for (int k = 0; k < 100; k++) {
-    val += sA[tid] * sB[tid];
-}
+        for (int k = 0; k < 100; ++k) {
+            val += sA[tid] * sB[tid];
+        }
 
-C[idx] = val;
+        C[idx] = val;
     }
 }
 
@@ -142,7 +141,7 @@ int main()
     CUDA_CHECK(cudaMemcpy(d_B, h_B, dimensioni, cudaMemcpyHostToDevice));
 
     // ============================================================
-    // CONFIGURAZIONE DI LANCIO
+    // CONFIGURAZIONE LANCIO
     // ============================================================
     dim3 blocco(BLOCK_SIZE);
     dim3 griglia((N + BLOCK_SIZE - 1) / BLOCK_SIZE);
@@ -193,7 +192,7 @@ int main()
     baseline_ms /= ITERAZIONI;
 
     // ============================================================
-    // TEST VECTORIZED
+    // TEST VETTORIALIZZATO
     // ============================================================
     CUDA_CHECK(cudaEventRecord(start));
     for (int i = 0; i < ITERAZIONI; ++i) {
@@ -313,6 +312,33 @@ int main()
     std::cout << "Approx. Shared Memory Bandwidth: " << bandwidth_shared << " GB/s\n";
 
     // ============================================================
+    // BLOCK SIZE TUNING
+    // ============================================================
+    std::cout << "\n=== Block Size Tuning ===\n";
+
+    int block_sizes[] = {64, 128, 256, 512};
+
+    for (int bs : block_sizes) {
+        dim3 tuning_blocco(bs);
+        dim3 tuning_griglia((N + bs - 1) / bs);
+
+        float time_ms = 0.0f;
+
+        CUDA_CHECK(cudaEventRecord(start));
+        for (int i = 0; i < ITERAZIONI; ++i) {
+            baseline_kernel<<<tuning_griglia, tuning_blocco>>>(d_C_baseline, d_A, d_B, N);
+        }
+        CUDA_CHECK(cudaGetLastError());
+        CUDA_CHECK(cudaEventRecord(stop));
+        CUDA_CHECK(cudaEventSynchronize(stop));
+        CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
+
+        time_ms /= ITERAZIONI;
+
+        std::cout << "Block Size " << bs << " -> " << time_ms << " ms\n";
+    }
+
+    // ============================================================
     // PULIZIA
     // ============================================================
     CUDA_CHECK(cudaEventDestroy(start));
@@ -329,37 +355,6 @@ int main()
     std::free(h_C_baseline);
     std::free(h_C_vectorized);
     std::free(h_C_shared);
-
-// ============================================================
-// BLOCK SIZE TUNING
-// ============================================================
-
-std::cout << "\n=== Block Size Tuning ===\n";
-
-int block_sizes[] = {64, 128, 256, 512};
-
-for (int bs : block_sizes) {
-
-    dim3 blocco(bs);
-    dim3 griglia((N + bs - 1) / bs);
-
-    float time_ms = 0.0f;
-
-    CUDA_CHECK(cudaEventRecord(start));
-
-    for (int i = 0; i < ITERAZIONI; ++i) {
-        baseline_kernel<<<griglia, blocco>>>(d_C_baseline, d_A, d_B, N);
-    }
-
-    CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaEventRecord(stop));
-    CUDA_CHECK(cudaEventSynchronize(stop));
-    CUDA_CHECK(cudaEventElapsedTime(&time_ms, start, stop));
-
-    time_ms /= ITERAZIONI;
-
-    std::cout << "Block Size " << bs << " -> " << time_ms << " ms\n";
-}
 
     return validazione_completa ? EXIT_SUCCESS : EXIT_FAILURE;
 }
