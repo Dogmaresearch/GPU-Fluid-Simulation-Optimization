@@ -1,75 +1,3 @@
-# 📜 License, Usage and Intellectual Property
-
-**Copyright (c) 2026 Dogma Research. All rights reserved.**
-
-This repository and all its contents — including source code, structure, optimization logic, benchmarking methodology, and documentation — are the exclusive intellectual property of:
-
-> **Dogma Research**
-
----
-
-## 🔒 Ownership
-
-This project is protected under international copyright and intellectual property laws.
-
-The following elements are explicitly considered protected:
-
-- Source code and kernel implementations
-- Optimization strategies and approaches
-- Benchmark design and methodology
-- Performance analysis and conclusions
-- Documentation and technical explanations
-
----
-
-## ✅ Permitted Use
-
-You are allowed to:
-
-- View and study the project for **educational purposes**
-- Use the code for **personal research and experimentation**
-- Reference this work in academic or technical contexts **with proper attribution**
-- Modify the code **privately** for learning purposes
-
----
-
-## ❌ Prohibited Use
-
-You are NOT allowed to:
-
-- Use this project (in whole or in part) for **commercial purposes**
-- Integrate the code or techniques into **paid or proprietary systems**
-- Redistribute, resell, or sublicense the project
-- Claim authorship or remove attribution
-- Publish modified versions without clearly crediting the original author
-- Extract or reuse optimization techniques in commercial environments without permission
-
----
-
-## ⚖️ Commercial Licensing
-
-For any commercial use, licensing, or collaboration:
-
-📩 **Contact:** Dogmaresearch@proton.me  
-
-No commercial rights are granted without **explicit written authorization**.
-
----
-
-## 🧠 Intellectual Property Notice
-
-This project includes not only code, but also:
-
-- original optimization workflows
-- GPU performance reasoning
-- memory-bound analysis methodology
-
-These elements are part of the intellectual contribution of **Dogma Research**.
-
-Unauthorized reuse in commercial or closed-source systems is strictly prohibited.
-
----
-
 # 🚀 GPU Fluid Simulation Optimization
 
 ## Overview
@@ -231,3 +159,75 @@ Focus:
 	•	High Performance Systems
 
 📩 Contact: Dogmaresearch@proton.me
+
+# 📜 License, Usage and Intellectual Property
+
+**Copyright (c) 2026 Dogma Research. All rights reserved.**
+
+This repository and all its contents — including source code, structure, optimization logic, benchmarking methodology, and documentation — are the exclusive intellectual property of:
+
+> **Dogma Research**
+
+---
+
+## 🔒 Ownership
+
+This project is protected under international copyright and intellectual property laws.
+
+The following elements are explicitly considered protected:
+
+- Source code and kernel implementations
+- Optimization strategies and approaches
+- Benchmark design and methodology
+- Performance analysis and conclusions
+- Documentation and technical explanations
+
+---
+
+## ✅ Permitted Use
+
+You are allowed to:
+
+- View and study the project for **educational purposes**
+- Use the code for **personal research and experimentation**
+- Reference this work in academic or technical contexts **with proper attribution**
+- Modify the code **privately** for learning purposes
+
+---
+
+## ❌ Prohibited Use
+
+You are NOT allowed to:
+
+- Use this project (in whole or in part) for **commercial purposes**
+- Integrate the code or techniques into **paid or proprietary systems**
+- Redistribute, resell, or sublicense the project
+- Claim authorship or remove attribution
+- Publish modified versions without clearly crediting the original author
+- Extract or reuse optimization techniques in commercial environments without permission
+
+---
+
+## ⚖️ Commercial Licensing
+
+For any commercial use, licensing, or collaboration:
+
+📩 **Contact:** Dogmaresearch@proton.me  
+
+No commercial rights are granted without **explicit written authorization**.
+
+---
+
+## 🧠 Intellectual Property Notice
+
+This project includes not only code, but also:
+
+- original optimization workflows
+- GPU performance reasoning
+- memory-bound analysis methodology
+
+These elements are part of the intellectual contribution of **Dogma Research**.
+
+Unauthorized reuse in commercial or closed-source systems is strictly prohibited.
+
+---
