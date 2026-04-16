@@ -122,7 +122,7 @@ int main()
     CUDA_CHECK(cudaMemcpy(d_B, h_B, dimensioni, cudaMemcpyHostToDevice));
 
     // ============================================================
-    // CONFIGURAZIONE LANCIO
+    // CONFIGURAZIONE DI LANCIO
     // ============================================================
     dim3 blocco(BLOCK_SIZE);
     dim3 griglia((N + BLOCK_SIZE - 1) / BLOCK_SIZE);
